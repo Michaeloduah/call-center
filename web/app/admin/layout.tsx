@@ -1,0 +1,18 @@
+import { AppShell } from "@/components/layout/AppShell";
+import { requireRole } from "@/lib/server/session";
+
+const nav = [
+  { href: "/admin", label: "Overview", exact: true },
+  { href: "/admin/users", label: "Users" },
+  { href: "/admin/departments", label: "Departments" },
+  { href: "/admin/settings", label: "Settings" },
+];
+
+export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
+  const user = await requireRole("tenant_admin");
+  return (
+    <AppShell user={user} nav={nav}>
+      {children}
+    </AppShell>
+  );
+}

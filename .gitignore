@@ -1,0 +1,19 @@
+# Environment
+.env
+.env.local
+*.local
+
+# Go
+/backend/bin/
+
+# Node / Next.js
+node_modules/
+/web/.next/
+/web/out/
+/web/next-env.d.ts
+*.tsbuildinfo
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/

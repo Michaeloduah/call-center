@@ -1,0 +1,33 @@
+# Local development services. The Go API and Next.js app run natively (see Makefile).
+# Host ports are non-default to avoid clashing with services already running locally.
+name: callcenter
+
+services:
+  postgres:
+    image: postgres:18.1-alpine
+    environment:
+      POSTGRES_USER: callcenter
+      POSTGRES_PASSWORD: callcenter
+      POSTGRES_DB: callcenter
+    ports:
+      - "55432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U callcenter -d callcenter"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "11025:1025" # SMTP
+      - "18025:8025" # Web UI
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+
+volumes:
+  postgres-data:
