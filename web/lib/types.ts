@@ -150,3 +150,64 @@ export interface AuditLogEntry {
   ip: string | null;
   created_at: string;
 }
+
+export type FieldMode = "hidden" | "optional" | "required";
+
+export interface CallerForm {
+  enabled: boolean;
+  name: FieldMode;
+  phone: FieldMode;
+  email: FieldMode;
+}
+
+export interface Widget {
+  id: string;
+  department_id: string;
+  department_name: string;
+  name: string;
+  public_key: string;
+  allowed_origins: string[];
+  is_active: boolean;
+  button_label: string;
+  accent_color: string;
+  greeting: string;
+  caller_form: CallerForm;
+  created_at: string;
+  updated_at: string;
+}
+
+export type Availability = "open" | "closed" | "unavailable";
+
+/** Caller-facing widget configuration (public, contains nothing secret). */
+export interface PublicWidgetConfig {
+  public_key: string;
+  tenant_name: string;
+  department_name: string;
+  button_label: string;
+  accent_color: string;
+  greeting: string;
+  caller_form: CallerForm;
+  consent_text: string;
+  availability: Availability;
+  timezone: string;
+  business_hours: HoursRange[];
+  frame_ancestors: string[];
+}
+
+export type CallStatus = "queued" | "ringing" | "active" | "completed" | "abandoned" | "missed" | "failed";
+
+export interface CallCreateResult {
+  call_id: string;
+  caller_token: string;
+  expires_at: string;
+  status: CallStatus;
+  media_url: string;
+  media_token: string;
+}
+
+export interface CallerCallView {
+  id: string;
+  status: CallStatus;
+  queue_position: number | null;
+  end_reason: string | null;
+}

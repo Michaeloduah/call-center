@@ -3,6 +3,7 @@ package auth
 import (
 	"strings"
 
+	"callcenter/internal/platform/secret"
 	"callcenter/internal/platform/validate"
 )
 
@@ -52,12 +53,10 @@ type TokenInput struct {
 	Token string `json:"token"`
 }
 
-const maxTokenLen = 128
-
 func (in *TokenInput) Validate() error {
 	v := validate.Errors{}
 	in.Token = strings.TrimSpace(in.Token)
-	if in.Token == "" || len(in.Token) > maxTokenLen {
+	if in.Token == "" || len(in.Token) > secret.MaxLen {
 		return errInvalidToken
 	}
 	return v.Err()
@@ -70,7 +69,7 @@ type TokenPasswordInput struct {
 
 func (in *TokenPasswordInput) Validate() error {
 	in.Token = strings.TrimSpace(in.Token)
-	if in.Token == "" || len(in.Token) > maxTokenLen {
+	if in.Token == "" || len(in.Token) > secret.MaxLen {
 		return errInvalidToken
 	}
 	v := validate.Errors{}

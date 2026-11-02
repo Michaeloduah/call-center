@@ -2,7 +2,7 @@
 SHELL := /bin/bash
 ENV := set -a && source backend/.env && set +a
 
-.PHONY: up down migrate migrate-down migrate-status api platform-admin test web
+.PHONY: up down migrate migrate-down migrate-status api platform-admin test web widget-test
 
 up: ## Start Postgres and Mailpit
 	docker compose -f deploy/docker-compose.yml up -d
@@ -32,3 +32,6 @@ test: ## Run backend tests (integration tests need `make up`)
 
 web: ## Run the Next.js app on :3100
 	cd web && npm run dev
+
+widget-test: ## Serve a sample customer website for the widget on :5500 (open /?key=wk_...)
+	python3 -m http.server 5500 --directory deploy/widget-test

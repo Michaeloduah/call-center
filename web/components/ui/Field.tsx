@@ -81,6 +81,9 @@ export function SelectField({ name, label, error, hint, options, id = name, ...p
   return (
     <FieldShell id={id} label={label} error={error} hint={hint}>
       <select
+        // React does not re-apply a changed defaultValue to a mounted <select>, so after a failed
+        // submit (when the form echoes the submitted value back) remount it to show that value.
+        key={String(props.defaultValue ?? "")}
         id={id}
         name={name}
         aria-invalid={error ? true : undefined}

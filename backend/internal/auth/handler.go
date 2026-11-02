@@ -9,6 +9,7 @@ import (
 	"callcenter/internal/platform/apperr"
 	"callcenter/internal/platform/httpx"
 	"callcenter/internal/platform/reqctx"
+	"callcenter/internal/platform/secret"
 )
 
 // Limiters bounds abuse of the public auth endpoints.
@@ -209,7 +210,7 @@ func Authenticate(svc *Service) httpx.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-			if !ok || token == "" || len(token) > maxTokenLen {
+			if !ok || token == "" || len(token) > secret.MaxLen {
 				httpx.Error(w, r, errInvalidSession)
 				return
 			}

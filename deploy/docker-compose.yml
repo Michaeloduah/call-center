@@ -29,5 +29,17 @@ services:
       MP_SMTP_AUTH_ACCEPT_ANY: "1"
       MP_SMTP_AUTH_ALLOW_INSECURE: "1"
 
+  livekit:
+    image: livekit/livekit-server:v1.9.0
+    command: ["--config", "/etc/livekit.yaml"]
+    ports:
+      - "7880:7880"     # HTTP API + WebSocket signalling
+      - "7881:7881"     # WebRTC over TCP (fallback)
+      - "7882:7882/udp" # WebRTC over UDP
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # lets webhooks reach the API on the host
+
 volumes:
   postgres-data:

@@ -28,6 +28,8 @@ interface RequestOptions {
   query?: Query;
   /** Send the session cookie as a bearer token. Defaults to true. */
   auth?: boolean;
+  /** Extra request headers (e.g. the caller token on public call endpoints). */
+  headers?: Record<string, string>;
 }
 
 function buildUrl(path: string, query?: Query): string {
@@ -49,7 +51,7 @@ function buildUrl(path: string, query?: Query): string {
  * client IP / user agent are forwarded for auditing and rate limiting.
  */
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, query, auth = true } = options;
+  const { method = "GET", body, query, auth = true, headers: extraHeaders } = options;
   const incoming = await headers();
   const outgoing = new Headers({ Accept: "application/json" });
 
@@ -63,6 +65,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
     if (token) outgoing.set("Authorization", `Bearer ${token}`);
   }
   if (body !== undefined) outgoing.set("Content-Type", "application/json");
+  for (const [name, value] of Object.entries(extraHeaders ?? {})) outgoing.set(name, value);
 
   let res: Response;
   try {

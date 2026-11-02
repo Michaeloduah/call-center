@@ -37,6 +37,9 @@ const (
 	ActionDepartmentMembers    = "department.members_updated"
 	ActionDepartmentSupervisor = "department.supervisors_updated"
 	ActionDepartmentHours      = "department.hours_updated"
+	ActionWidgetCreated        = "widget.created"
+	ActionWidgetUpdated        = "widget.updated"
+	ActionWidgetDeleted        = "widget.deleted"
 )
 
 // Entry describes one action. TenantID is uuid.Nil for platform-level actions.

@@ -114,8 +114,13 @@ func (pgRepository) Update(ctx context.Context, tenantID, id uuid.UUID, in Input
 	return err
 }
 
+// Delete fails with errInUse while widgets point at the department or calls reference it.
 func (pgRepository) Delete(ctx context.Context, tenantID, id uuid.UUID) error {
-	return exec(ctx, "delete department", `DELETE FROM departments WHERE tenant_id = $1 AND id = $2`, tenantID, id)
+	err := exec(ctx, "delete department", `DELETE FROM departments WHERE tenant_id = $1 AND id = $2`, tenantID, id)
+	if database.IsForeignKeyViolation(err) {
+		return errInUse
+	}
+	return err
 }
 
 func (pgRepository) Members(ctx context.Context, tenantID, id uuid.UUID) ([]UserRef, error) {

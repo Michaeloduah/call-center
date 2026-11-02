@@ -94,7 +94,7 @@ func sweepRateLimiters(ctx context.Context, a *app.App) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			for _, l := range a.AuthLimits.All() {
+			for _, l := range append(a.AuthLimits.All(), a.CallLimits) {
 				l.Sweep()
 			}
 		}

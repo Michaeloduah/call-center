@@ -11,6 +11,7 @@ import (
 	"callcenter/internal/audit"
 	"callcenter/internal/platform/database"
 	"callcenter/internal/platform/reqctx"
+	"callcenter/internal/platform/secret"
 )
 
 // TenantProvisioner creates a tenant and its first admin for self-service sign-up.
@@ -72,7 +73,7 @@ func (s *Service) Login(ctx context.Context, in LoginInput) (*LoginResult, error
 		return nil, err
 	}
 
-	raw, tokenHash, err := newSecret()
+	raw, tokenHash, err := secret.New()
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +112,7 @@ func checkCanSignIn(c *credentials) error {
 func (s *Service) Authenticate(ctx context.Context, rawToken string) (reqctx.Principal, error) {
 	var p *reqctx.Principal
 	err := s.tx.InPlatform(ctx, func(ctx context.Context) (err error) {
-		p, err = s.repo.PrincipalBySessionHash(ctx, hashSecret(rawToken))
+		p, err = s.repo.PrincipalBySessionHash(ctx, secret.Hash(rawToken))
 		return err
 	})
 	if err != nil {
@@ -190,7 +191,7 @@ func (s *Service) Signup(ctx context.Context, in SignupInput) (*SignupResult, er
 
 func (s *Service) VerifyEmail(ctx context.Context, token string) error {
 	return s.tx.InPlatform(ctx, func(ctx context.Context) error {
-		userID, err := s.repo.ClaimToken(ctx, hashSecret(token), PurposeVerifyEmail)
+		userID, err := s.repo.ClaimToken(ctx, secret.Hash(token), PurposeVerifyEmail)
 		if err != nil {
 			return err
 		}
@@ -244,7 +245,7 @@ func (s *Service) ResetPassword(ctx context.Context, token, password string) err
 		return err
 	}
 	return s.tx.InPlatform(ctx, func(ctx context.Context) error {
-		userID, err := s.repo.ClaimToken(ctx, hashSecret(token), PurposeResetPassword)
+		userID, err := s.repo.ClaimToken(ctx, secret.Hash(token), PurposeResetPassword)
 		if err != nil {
 			return err
 		}
@@ -269,7 +270,7 @@ func (s *Service) ResetPassword(ctx context.Context, token, password string) err
 func (s *Service) LookupInvite(ctx context.Context, token string) (*InviteInfo, error) {
 	var info *InviteInfo
 	err := s.tx.InPlatform(ctx, func(ctx context.Context) error {
-		userID, err := s.repo.PeekToken(ctx, hashSecret(token), PurposeInvite)
+		userID, err := s.repo.PeekToken(ctx, secret.Hash(token), PurposeInvite)
 		if err != nil {
 			return err
 		}
@@ -295,7 +296,7 @@ func (s *Service) AcceptInvite(ctx context.Context, token, password string) erro
 		return err
 	}
 	return s.tx.InPlatform(ctx, func(ctx context.Context) error {
-		userID, err := s.repo.ClaimToken(ctx, hashSecret(token), PurposeInvite)
+		userID, err := s.repo.ClaimToken(ctx, secret.Hash(token), PurposeInvite)
 		if err != nil {
 			return err
 		}
@@ -315,7 +316,7 @@ func (s *Service) AcceptInvite(ctx context.Context, token, password string) erro
 
 // issueToken replaces any outstanding token of the same purpose. Must run inside a transaction.
 func (s *Service) issueToken(ctx context.Context, userID uuid.UUID, purpose Purpose) (string, error) {
-	raw, hash, err := newSecret()
+	raw, hash, err := secret.New()
 	if err != nil {
 		return "", err
 	}

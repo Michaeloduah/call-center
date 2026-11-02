@@ -7,13 +7,17 @@ import (
 
 	"callcenter/internal/audit"
 	"callcenter/internal/auth"
+	"callcenter/internal/call"
 	"callcenter/internal/department"
+	"callcenter/internal/media"
 	"callcenter/internal/platform/config"
 	"callcenter/internal/platform/database"
+	"callcenter/internal/platform/httpx"
 	"callcenter/internal/platform/mailer"
 	"callcenter/internal/settings"
 	"callcenter/internal/tenant"
 	"callcenter/internal/user"
+	"callcenter/internal/widget"
 )
 
 type App struct {
@@ -30,6 +34,10 @@ type App struct {
 	Tenants     *tenant.Service
 	Settings    *settings.Service
 	Departments *department.Service
+	Widgets     *widget.Service
+	Calls       *call.Service
+	Media       media.Provider
+	CallLimits  *httpx.RateLimiter
 }
 
 func New(cfg config.Config, db *database.DB, logger *slog.Logger) (*App, error) {
@@ -45,6 +53,9 @@ func New(cfg config.Config, db *database.DB, logger *slog.Logger) (*App, error) 
 	authSvc := auth.NewService(db, auth.NewRepository(), auth.NewNotifier(smtp, cfg.WebBaseURL), provisioner,
 		recorder, cfg.SessionTTL, logger)
 
+	mediaProvider := media.NewLiveKit(cfg.LiveKit)
+	widgetRepo := widget.NewRepository()
+
 	return &App{
 		Config:      cfg,
 		DB:          db,
@@ -58,5 +69,9 @@ func New(cfg config.Config, db *database.DB, logger *slog.Logger) (*App, error) 
 		Tenants:     tenant.NewService(db, tenantRepo, provisioner, authSvc, authSvc, recorder),
 		Settings:    settings.NewService(db, settings.NewRepository(), recorder),
 		Departments: department.NewService(db, department.NewRepository(), userRepo, recorder),
+		Widgets:     widget.NewService(db, widgetRepo, recorder),
+		Calls:       call.NewService(db, call.NewRepository(), widgetRepo, mediaProvider, logger),
+		Media:       mediaProvider,
+		CallLimits:  call.NewCreateLimiter(),
 	}, nil
 }

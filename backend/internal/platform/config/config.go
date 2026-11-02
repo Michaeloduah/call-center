@@ -20,7 +20,15 @@ type Config struct {
 	SessionTTL      time.Duration
 	TrustedProxies  []netip.Prefix // peers allowed to set X-Forwarded-For (the Next.js server)
 	SMTP            SMTPConfig
+	LiveKit         LiveKitConfig
 	ShutdownTimeout time.Duration
+}
+
+type LiveKitConfig struct {
+	URL       string // server API base, e.g. http://localhost:7880
+	PublicURL string // WebSocket URL browsers connect to, e.g. ws://localhost:7880
+	APIKey    string
+	APISecret string
 }
 
 type SMTPConfig struct {
@@ -61,6 +69,12 @@ func Load() (Config, error) {
 			Username: getDefault("SMTP_USERNAME", ""),
 			Password: getDefault("SMTP_PASSWORD", ""),
 			From:     get("SMTP_FROM"),
+		},
+		LiveKit: LiveKitConfig{
+			URL:       get("LIVEKIT_URL"),
+			PublicURL: get("LIVEKIT_PUBLIC_URL"),
+			APIKey:    get("LIVEKIT_API_KEY"),
+			APISecret: get("LIVEKIT_API_SECRET"),
 		},
 	}
 

@@ -13,20 +13,27 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design, decisions and m
 - Tenant admin: user CRUD (invite, edit role, disable/enable, delete, resend invite), departments CRUD with agents, supervisors and weekly business hours, tenant settings.
 - Tenant isolation enforced in repositories **and** by Postgres row-level security.
 
-Calling (widget, LiveKit, routing, recording) starts in M2.
+**M2 — Widgets & caller side** is implemented:
+
+- Tenant admin: widget CRUD (department, allowed websites, button label/colour, greeting, caller-form fields) with an embed snippet.
+- `widget.js` loader (Shadow DOM button + iframe) and the caller page: business-hours check, caller form, mandatory recording consent, queue position, hang-up.
+- Public call API backed by self-hosted LiveKit: calls are created `queued`, the caller joins an audio-only room, and LiveKit webhooks (signature-verified) end calls when the caller leaves or the room closes.
+- Embedding is restricted to each widget's allowed websites (CSP `frame-ancestors`, plus the loader's config endpoint refuses other origins).
+
+Routing calls to agents starts in M3.
 
 ## Layout
 
 ```text
 backend/   Go API (modular monolith) — cmd/api, cmd/cli, internal/<domain>, migrations/
 web/       Next.js app (App Router, multi-page) — talks to the API from the server only
-deploy/    docker-compose for local Postgres + Mailpit
+deploy/    docker-compose for local Postgres, Mailpit and LiveKit; sample widget test site
 docs/      Architecture and decisions
 ```
 
 ## Local development
 
-Requirements: Go 1.26+, Node 22+, Docker.
+Requirements: Go 1.26.8+ (the LiveKit SDK requires it; `go` downloads it automatically), Node 22+, Docker.
 
 ```bash
 make up
@@ -51,6 +58,7 @@ make web
 - Web app: http://localhost:3100
 - API: http://localhost:8080 (health: `/healthz`)
 - Mailpit (all outgoing email in dev): http://localhost:18025
+- LiveKit (media server): ws://localhost:7880
 
 Host ports are non-default (Postgres 55432, SMTP 11025) to avoid clashing with other local services.
 
@@ -63,6 +71,17 @@ make platform-admin EMAIL=you@example.com NAME="Your Name"
 ```
 
 Businesses can also sign up themselves at `/signup`.
+
+### Trying the widget
+
+1. As a tenant admin, create a department (set its business hours) and a widget with `http://localhost:5500` in its allowed websites.
+2. Serve the sample customer site:
+
+```bash
+make widget-test
+```
+
+3. Open `http://localhost:5500/?key=<the widget's public key>` and click the button. The browser must grant microphone access.
 
 ## Tests
 

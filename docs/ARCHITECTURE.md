@@ -1,6 +1,6 @@
 # CallCenter — Architecture & Data Model (v0.4)
 
-Status: **M1 (foundation) implemented** on branch `feat/m1-foundation`; M2–M6 not started. Each item is labelled **Decision** (you confirmed it),
+Status: **M1 (foundation) and M2 (widgets & caller side) implemented**; M3–M6 not started. Each item is labelled **Decision** (you confirmed it),
 **Proposal** (my recommendation, needs your OK), **Assumption** (I am guessing, please correct me) or **Open question**.
 
 ---
@@ -456,7 +456,7 @@ Each domain package has the same shape: `handler.go` (HTTP + request DTOs + `Val
 - Login and signup are rate-limited. Passwords use Argon2id.
 - New agents get an **invite email** and set their own password. Admins never handle passwords.
 - LiveKit tokens are room-scoped and short-lived. The caller can only publish audio and receive data.
-- Public widget endpoints: `Origin` allowlist, per-IP and per-tenant rate limits, a cap on concurrently queued calls.
+- Public widget endpoints: embedding restricted to each widget's allowed websites via CSP `frame-ancestors` on the iframe page (browser-enforced; origins must be `https`, except localhost in development), the loader's config endpoint returns 404 to other origins, per-IP rate limits on call creation, and a cap of 50 live calls per tenant. Consent text is snapshotted from server-side settings, never taken from the client.
 - Payment and LiveKit webhooks: signature verification + an idempotency table.
 
 ---

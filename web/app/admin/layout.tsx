@@ -5,6 +5,7 @@ const nav = [
   { href: "/admin", label: "Overview", exact: true },
   { href: "/admin/users", label: "Users" },
   { href: "/admin/departments", label: "Departments" },
+  { href: "/admin/widgets", label: "Widgets" },
   { href: "/admin/settings", label: "Settings" },
 ];
 

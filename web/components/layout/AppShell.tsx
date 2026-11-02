@@ -36,7 +36,7 @@ export function AppShell({ user, nav, children }: { user: Me; nav: NavItem[]; ch
           </form>
         </div>
       </aside>
-      <main className="flex-1 px-4 py-8 sm:px-8">
+      <main className="min-w-0 flex-1 px-4 py-8 sm:px-8">
         <div className="mx-auto max-w-5xl">{children}</div>
       </main>
     </div>

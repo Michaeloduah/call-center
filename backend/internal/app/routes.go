@@ -7,12 +7,14 @@ import (
 
 	"callcenter/internal/audit"
 	"callcenter/internal/auth"
+	"callcenter/internal/call"
 	"callcenter/internal/department"
 	"callcenter/internal/platform/httpx"
 	"callcenter/internal/platform/reqctx"
 	"callcenter/internal/settings"
 	"callcenter/internal/tenant"
 	"callcenter/internal/user"
+	"callcenter/internal/widget"
 )
 
 // Handler builds the HTTP API. Authentication uses a bearer session token sent by the
@@ -80,6 +82,21 @@ func (a *App) Handler() http.Handler {
 	mux.Handle("PUT /v1/admin/departments/{id}/members", tenantAdmin(dh.SetMembers))
 	mux.Handle("PUT /v1/admin/departments/{id}/supervisors", tenantAdmin(dh.SetSupervisors))
 	mux.Handle("PUT /v1/admin/departments/{id}/business-hours", tenantAdmin(dh.SetBusinessHours))
+
+	wh := widget.NewHandler(a.Widgets)
+	mux.Handle("GET /v1/admin/widgets", tenantAdmin(wh.List))
+	mux.Handle("POST /v1/admin/widgets", tenantAdmin(wh.Create))
+	mux.Handle("GET /v1/admin/widgets/{id}", tenantAdmin(wh.Get))
+	mux.Handle("PUT /v1/admin/widgets/{id}", tenantAdmin(wh.Update))
+	mux.Handle("DELETE /v1/admin/widgets/{id}", tenantAdmin(wh.Delete))
+
+	// Public caller endpoints (no user session; calls are authorised by their caller token).
+	ch := call.NewHandler(a.Calls, a.Media, a.CallLimits, a.Logger)
+	mux.HandleFunc("GET /v1/public/widgets/{key}", wh.Public)
+	mux.HandleFunc("POST /v1/public/widgets/{key}/calls", ch.Create)
+	mux.HandleFunc("GET /v1/public/calls/{id}", ch.Status)
+	mux.HandleFunc("POST /v1/public/calls/{id}/hangup", ch.HangUp)
+	mux.HandleFunc("POST /v1/webhooks/livekit", ch.MediaWebhook)
 
 	mux.Handle("GET /v1/admin/settings", tenantAdmin(sh.GetTenant))
 	mux.Handle("PUT /v1/admin/settings", tenantAdmin(sh.UpdateTenant))

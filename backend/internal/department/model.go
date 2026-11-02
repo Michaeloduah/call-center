@@ -58,4 +58,6 @@ type Filter struct {
 var (
 	errNotFound  = apperr.NotFound("Department")
 	errNameTaken = apperr.FieldConflict("name", "A department with this name already exists.")
+	errInUse     = apperr.Conflict("department_in_use",
+		"This department has widgets or call history. Deactivate it instead, or move its widgets to another department first.")
 )

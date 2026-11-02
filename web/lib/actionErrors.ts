@@ -8,6 +8,8 @@ const actionErrors: Record<string, string> = {
   forbidden: "You cannot perform this action on your own account.",
   not_invited: "Only users who have not accepted their invitation can be re-invited.",
   not_found: "That item no longer exists.",
+  department_in_use:
+    "This department has widgets or call history. Deactivate it instead, or move its widgets to another department first.",
 };
 
 export function actionErrorText(code: string | string[] | undefined): string | null {

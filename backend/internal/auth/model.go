@@ -3,10 +3,6 @@
 package auth
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -107,19 +103,3 @@ var (
 	errInvalidSession     = apperr.Unauthenticated("unauthenticated", "Your session has expired. Please sign in again.")
 	errInvalidToken       = &apperr.Error{Kind: apperr.KindValidation, Code: "invalid_token", Message: "This link is invalid or has expired."}
 )
-
-// newSecret returns a random URL-safe secret and its SHA-256 hash for storage.
-// Secrets have 256 bits of entropy, so a fast hash is sufficient (no need for argon2).
-func newSecret() (raw string, hash []byte, err error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", nil, fmt.Errorf("generate secret: %w", err)
-	}
-	raw = base64.RawURLEncoding.EncodeToString(b)
-	return raw, hashSecret(raw), nil
-}
-
-func hashSecret(raw string) []byte {
-	sum := sha256.Sum256([]byte(raw))
-	return sum[:]
-}
