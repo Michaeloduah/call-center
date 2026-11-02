@@ -1,0 +1,33 @@
+<!doctype html>
+<!--
+  Local test page for the embeddable widget. Serve it with `make widget-test` (http://localhost:5500),
+  add http://localhost:5500 to a widget's allowed websites, and put that widget's key below.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Widget test site</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 640px; margin: 48px auto; padding: 0 16px; color: #0f172a; }
+      code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <h1>Example customer website</h1>
+    <p>The “Call us” button in the corner comes from <code>widget.js</code>.</p>
+    <p>Widget key is read from the <code>?key=</code> query parameter.</p>
+    <script>
+      // Inject the loader exactly as a tenant would embed it, using the key from the URL.
+      (function () {
+        var key = new URLSearchParams(location.search).get("key");
+        if (!key) { document.body.insertAdjacentHTML("beforeend", "<p><strong>Add ?key=wk_… to the URL.</strong></p>"); return; }
+        var s = document.createElement("script");
+        s.src = "http://localhost:3100/widget.js";
+        s.async = true;
+        s.setAttribute("data-widget-key", key);
+        document.body.appendChild(s);
+      })();
+    </script>
+  </body>
+</html>

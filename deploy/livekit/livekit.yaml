@@ -1,0 +1,20 @@
+# LiveKit configuration for LOCAL DEVELOPMENT ONLY. The key pair below is a throwaway dev
+# credential; production must use generated keys supplied via environment/secrets.
+port: 7880
+rtc:
+  tcp_port: 7881
+  # A single multiplexed UDP port keeps Docker port mapping simple on macOS/Windows.
+  udp_port: 7882
+  use_external_ip: false
+  node_ip: 127.0.0.1
+keys:
+  devkey: devsecret-devsecret-devsecret-devsecret
+room:
+  # Rooms are created explicitly by the API; never allow participants to create them.
+  auto_create: false
+webhook:
+  api_key: devkey
+  urls:
+    - http://host.docker.internal:8080/v1/webhooks/livekit
+logging:
+  level: info
