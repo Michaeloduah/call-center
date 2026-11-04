@@ -107,6 +107,7 @@ var (
 	errCallNotFound    = apperr.NotFound("Call")
 	errClosed          = apperr.Conflict("closed", "We're closed right now. Please call back during our opening hours.")
 	errUnavailable     = apperr.Conflict("unavailable", "Calls to this team are not available right now.")
+	errLimitReached    = apperr.Conflict("limit_reached", "We can't take calls right now. Please leave your details and we'll call you back.")
 	errNoAgents        = apperr.Conflict("no_agents", "Nobody is available to take your call right now. Please try again shortly.")
 	errBusy            = apperr.Conflict("busy", "All our lines are busy. Please try again in a few minutes.")
 	errInvalidCaller   = apperr.Unauthenticated("invalid_caller_token", "This call session has expired.")

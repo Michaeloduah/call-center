@@ -22,18 +22,30 @@ type WidgetResolver interface {
 	Resolve(ctx context.Context, publicKey string) (*widget.Resolved, error)
 }
 
+// Limits tells whether the tenant's plan still allows new calls (implemented by limits.Service).
+type Limits interface {
+	CallsBlocked(ctx context.Context, tenantID uuid.UUID) (bool, error)
+}
+
+// UsageWatcher is told when a call has used up minutes so plan-usage warnings can go out (billing.Service).
+type UsageWatcher interface {
+	CheckUsage(tenantID uuid.UUID)
+}
+
 type Service struct {
 	tx      database.TxManager
 	repo    Repository
 	widgets WidgetResolver
 	media   media.Provider
 	router  Router
+	plan    Limits
+	usage   UsageWatcher
 	logger  *slog.Logger
 	now     func() time.Time
 }
 
-func NewService(tx database.TxManager, repo Repository, widgets WidgetResolver, mp media.Provider, router Router, logger *slog.Logger) *Service {
-	return &Service{tx: tx, repo: repo, widgets: widgets, media: mp, router: router, logger: logger, now: time.Now}
+func NewService(tx database.TxManager, repo Repository, widgets WidgetResolver, mp media.Provider, router Router, plan Limits, usage UsageWatcher, logger *slog.Logger) *Service {
+	return &Service{tx: tx, repo: repo, widgets: widgets, media: mp, router: router, plan: plan, usage: usage, logger: logger, now: time.Now}
 }
 
 // Create queues a new call from a widget and returns the caller's credentials for the call room.
@@ -58,6 +70,9 @@ func (s *Service) Create(ctx context.Context, publicKey string, in CreateInput) 
 		if w == nil {
 			return errWidgetNotFound
 		}
+		if w.CapReached, err = s.plan.CallsBlocked(ctx, w.TenantID); err != nil {
+			return err
+		}
 		switch availability, err := widget.AvailabilityOf(w, s.now()); {
 		case err != nil:
 			return err
@@ -65,6 +80,8 @@ func (s *Service) Create(ctx context.Context, publicKey string, in CreateInput) 
 			return errClosed
 		case availability == widget.AvailabilityUnavailable:
 			return errUnavailable
+		case availability == widget.AvailabilityLimitReached:
+			return errLimitReached
 		case availability == widget.AvailabilityNoAgents:
 			return errNoAgents
 		}
@@ -226,6 +243,7 @@ func (s *Service) finish(ctx context.Context, end func(ctx context.Context) (*En
 	}
 	s.closeRoom(ctx, ended.RoomName)
 	s.router.Trigger(ended.TenantID)
+	s.usage.CheckUsage(ended.TenantID)
 	return nil
 }
 

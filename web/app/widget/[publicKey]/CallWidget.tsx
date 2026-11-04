@@ -33,7 +33,7 @@ export function CallWidget({ config }: { config: PublicWidgetConfig }) {
           <Closed config={config} />
         ) : config.availability === "unavailable" ? (
           <p className="text-sm text-slate-700">Calls to this team aren&apos;t available right now. Please try again later.</p>
-        ) : config.availability === "no_agents" ? (
+        ) : config.availability === "no_agents" || config.availability === "limit_reached" ? (
           <NoAgents config={config} />
         ) : (
           <StartForm
@@ -259,7 +259,11 @@ function NoAgents({ config }: { config: PublicWidgetConfig }) {
   const [checking, startChecking] = useTransition();
   return (
     <div className="space-y-4">
-      <p className="text-sm text-slate-700">Nobody is available to take your call right now. Please try again shortly.</p>
+      <p className="text-sm text-slate-700">
+        {config.availability === "limit_reached"
+          ? "We can't take calls right now. Leave your details below and we'll call you back."
+          : "Nobody is available to take your call right now. Please try again shortly."}
+      </p>
       <button
         type="button"
         disabled={checking}

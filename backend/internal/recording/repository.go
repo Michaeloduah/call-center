@@ -25,7 +25,7 @@ type Repository interface {
 	Attach(ctx context.Context, id uuid.UUID, egressID, key string) error
 	Fail(ctx context.Context, id uuid.UUID, reason string) error
 	// Finish applies the recorder's final report. found is false when no recording has that egress id.
-	Finish(ctx context.Context, egressID string, res media.RecordingResult) (found bool, err error)
+	Finish(ctx context.Context, egressID string, res media.RecordingResult) (tenantID uuid.UUID, found bool, err error)
 	// FailStale marks recordings that never completed. It returns how many it touched.
 	FailStale(ctx context.Context) (int, error)
 
@@ -86,17 +86,18 @@ func (pgRepository) Fail(ctx context.Context, id uuid.UUID, reason string) error
 	return nil
 }
 
-func (pgRepository) Finish(ctx context.Context, egressID string, res media.RecordingResult) (bool, error) {
+func (pgRepository) Finish(ctx context.Context, egressID string, res media.RecordingResult) (uuid.UUID, bool, error) {
 	q, err := database.Conn(ctx)
 	if err != nil {
-		return false, err
+		return uuid.Nil, false, err
 	}
-	var found bool
-	if err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM recordings WHERE egress_id = $1)`, egressID).Scan(&found); err != nil {
-		return false, fmt.Errorf("find recording by egress: %w", err)
+	var tenantID uuid.UUID
+	err = q.QueryRow(ctx, `SELECT tenant_id FROM recordings WHERE egress_id = $1`, egressID).Scan(&tenantID)
+	if database.IsNoRows(err) {
+		return uuid.Nil, false, nil
 	}
-	if !found {
-		return false, nil
+	if err != nil {
+		return uuid.Nil, false, fmt.Errorf("find recording by egress: %w", err)
 	}
 	// Both branches only touch recordings that are still unfinished, so a redelivered event is a no-op.
 	if res.Succeeded {
@@ -110,9 +111,9 @@ func (pgRepository) Finish(ctx context.Context, egressID string, res media.Recor
 			WHERE egress_id = $1 AND status IN ('starting', 'recording')`, egressID, res.Error)
 	}
 	if err != nil {
-		return true, fmt.Errorf("finish recording: %w", err)
+		return tenantID, true, fmt.Errorf("finish recording: %w", err)
 	}
-	return true, nil
+	return tenantID, true, nil
 }
 
 func (pgRepository) FailStale(ctx context.Context) (int, error) {

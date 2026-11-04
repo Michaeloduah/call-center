@@ -6,14 +6,15 @@ import {
   suspendTenantAction,
 } from "@/app/platform/tenants/actions";
 import { ActionError } from "@/components/ui/ActionError";
-import { TenantStatusBadge, UserStatusBadge } from "@/components/ui/Badge";
+import { SubscriptionStatusBadge, TenantStatusBadge, UserStatusBadge } from "@/components/ui/Badge";
 import { LinkButton } from "@/components/ui/Button";
 import { Card, DescriptionList } from "@/components/ui/Card";
 import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Notice } from "@/components/ui/Notice";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { plansApi } from "@/lib/api/billing";
 import { tenantsApi } from "@/lib/api/tenants";
-import { formatDateTime } from "@/lib/format";
+import { formatDate, formatDateTime, formatMinutes, formatMoney, formatStorage } from "@/lib/format";
 import { orNotFound } from "@/lib/server/api";
 import { requireRole } from "@/lib/server/session";
 
@@ -22,7 +23,7 @@ export const metadata: Metadata = { title: "Tenant · CallCenter" };
 export default async function TenantDetailPage({ params, searchParams }: PageProps<"/platform/tenants/[id]">) {
   await requireRole("platform_admin");
   const [{ id }, sp] = await Promise.all([params, searchParams]);
-  const tenant = await orNotFound(tenantsApi.get(id));
+  const [tenant, billing] = await Promise.all([orNotFound(tenantsApi.get(id)), orNotFound(plansApi.tenantBilling(id))]);
   const suspended = tenant.status === "suspended";
 
   return (
@@ -81,6 +82,35 @@ export default async function TenantDetailPage({ params, searchParams }: PagePro
           />
           {suspended ? (
             <p className="mt-4 text-sm text-slate-500">This tenant is suspended. Deleting it permanently removes all of its data.</p>
+          ) : null}
+        </Card>
+        <Card title="Subscription" actions={<SubscriptionStatusBadge status={billing.subscription.status} />}>
+          <DescriptionList
+            items={[
+              { label: "Plan", value: billing.plan.name },
+              {
+                label: "Price",
+                value: billing.price ? `${formatMoney(billing.price.amount_minor, billing.price.currency)} / ${billing.price.interval === "yearly" ? "year" : "month"}` : "Free",
+              },
+              { label: "Period", value: `${formatDate(billing.subscription.current_period_start)} – ${formatDate(billing.subscription.current_period_end)}` },
+              { label: "Provider", value: billing.subscription.provider ?? "—" },
+              { label: "Call time this period", value: formatMinutes(billing.usage.call_seconds) },
+              { label: "Recording storage", value: formatStorage(billing.usage.storage_bytes) },
+            ]}
+          />
+          {billing.payments.length > 0 ? (
+            <ul className="mt-4 divide-y divide-slate-100 text-sm">
+              {billing.payments.slice(0, 5).map((pay) => (
+                <li key={pay.id} className="flex justify-between py-1.5">
+                  <span className="text-slate-600">
+                    {formatDateTime(pay.paid_at)} · {pay.kind === "overage" ? "extra usage" : "subscription"}
+                  </span>
+                  <span className={pay.status === "failed" ? "text-red-600" : "text-slate-900"}>
+                    {formatMoney(pay.amount_minor, pay.currency)} {pay.status}
+                  </span>
+                </li>
+              ))}
+            </ul>
           ) : null}
         </Card>
         <Card title="Admins">

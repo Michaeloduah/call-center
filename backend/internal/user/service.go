@@ -25,6 +25,11 @@ type SessionRevoker interface {
 	RevokeUserSessions(ctx context.Context, userID uuid.UUID) error
 }
 
+// Limits enforces the tenant's plan (implemented by limits.Service).
+type Limits interface {
+	CheckEnableUser(ctx context.Context, tenantID, userID uuid.UUID) error
+}
+
 type AuditRecorder interface {
 	Record(ctx context.Context, e audit.Entry) error
 }
@@ -36,10 +41,11 @@ type Service struct {
 	inviter  Inviter
 	sessions SessionRevoker
 	audit    AuditRecorder
+	plan     Limits
 }
 
-func NewService(tx database.TxManager, repo Repository, inviter Inviter, sessions SessionRevoker, recorder AuditRecorder) *Service {
-	return &Service{tx: tx, repo: repo, inviter: inviter, sessions: sessions, audit: recorder}
+func NewService(tx database.TxManager, repo Repository, inviter Inviter, sessions SessionRevoker, recorder AuditRecorder, plan Limits) *Service {
+	return &Service{tx: tx, repo: repo, inviter: inviter, sessions: sessions, audit: recorder, plan: plan}
 }
 
 var (
@@ -196,6 +202,9 @@ func (s *Service) Enable(ctx context.Context, id uuid.UUID) error {
 	return s.changeStatus(ctx, id, func(ctx context.Context, p reqctx.Principal, u *User) error {
 		if u.Status != StatusDisabled {
 			return nil
+		}
+		if err := s.plan.CheckEnableUser(ctx, p.TenantID, id); err != nil {
+			return err
 		}
 		if err := s.repo.Enable(ctx, p.TenantID, id); err != nil {
 			return err

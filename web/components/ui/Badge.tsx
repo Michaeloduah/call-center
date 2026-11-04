@@ -3,10 +3,11 @@ import {
   callStatusLabels,
   callbackStatusLabels,
   recordingStatusLabels,
+  subscriptionStatusLabels,
   tenantStatusLabels,
   userStatusLabels,
 } from "@/lib/format";
-import type { AgentState, CallStatus, CallbackStatus, RecordingStatus, TenantStatus, UserStatus } from "@/lib/types";
+import type { AgentState, CallStatus, CallbackStatus, RecordingStatus, SubscriptionStatus, TenantStatus, UserStatus } from "@/lib/types";
 
 const tones = {
   green: "bg-green-50 text-green-700 ring-green-600/20",
@@ -71,4 +72,10 @@ const recordingTone: Record<RecordingStatus, keyof typeof tones> = { starting: "
 
 export function RecordingStatusBadge({ status }: { status: RecordingStatus }) {
   return <Badge tone={recordingTone[status]}>{recordingStatusLabels[status]}</Badge>;
+}
+
+const subscriptionTone: Record<SubscriptionStatus, keyof typeof tones> = { active: "green", past_due: "red", cancelled: "slate", incomplete: "amber" };
+
+export function SubscriptionStatusBadge({ status }: { status: SubscriptionStatus }) {
+  return <Badge tone={subscriptionTone[status]}>{subscriptionStatusLabels[status]}</Badge>;
 }

@@ -35,6 +35,13 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design, decisions and m
 - Callback requests when the department is closed, nobody is online, or a call goes unanswered; agents claim and complete them, admins can assign or cancel them and are emailed about new ones.
 - Call history (`/calls`) and callbacks (`/callbacks`) for every tenant role, scoped by what each role may see; the platform admin has `/platform/recordings/deleted`.
 
+**M5 — Plans, billing & limits** is implemented:
+
+- Platform admins manage plans and prices (`/platform/plans`); every tenant starts on the free plan and upgrades from `/admin/billing` through a hosted checkout. A plan only changes when a verified provider webhook arrives.
+- Plan limits (agent seats, departments, widgets, call minutes per month, recording storage) are enforced in the services. When a minutes or storage cap blocks new calls, callers get the callback form. Tenant admins choose per cap whether to block or pay for the extra (paid plans only); overage is billed once when the period closes.
+- A failed payment starts a 14-day grace period, then the tenant falls back to the free plan (nothing is deleted). Admins are emailed at 80% and 100% of each cap and on payment failure.
+- **Payments are simulated in development** (`BILLING_FAKE`, on by default outside production). Paystack and Stripe adapters exist and are tested against local fake servers and signed samples, but **have not been run against the real providers**; the checklist is in `docs/M5-DESIGN.md` §17.
+
 Known limit: the recorder takes 5–8 seconds to start, so the first seconds of a call are not captured (see `docs/M4-DESIGN.md` §17).
 
 ## Layout

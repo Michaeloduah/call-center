@@ -79,6 +79,13 @@ func (f *Fixture) Tenant() uuid.UUID {
 		if _, err := q.Exec(f.Ctx, `INSERT INTO tenant_settings (tenant_id) VALUES ($1)`, id); err != nil {
 			f.T.Fatalf("create tenant settings: %v", err)
 		}
+		if _, err := q.Exec(f.Ctx, `
+			INSERT INTO subscriptions (tenant_id, plan_id, status, current_period_start, current_period_end)
+			SELECT $1, p.id, 'active', date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC',
+			       (date_trunc('month', now() AT TIME ZONE 'UTC') + interval '1 month') AT TIME ZONE 'UTC'
+			FROM plans p WHERE p.is_free`, id); err != nil {
+			f.T.Fatalf("create subscription: %v", err)
+		}
 	})
 	f.T.Cleanup(func() {
 		_ = f.DB.InPlatform(context.Background(), func(ctx context.Context) error {
@@ -267,4 +274,66 @@ func (f *Fixture) MissedCall(tenantID, departmentID uuid.UUID) uuid.UUID {
 	id := f.Call(tenantID, departmentID, 10*time.Minute)
 	f.Exec(`UPDATE calls SET status = 'missed', ended_at = now(), end_reason = 'max_wait_exceeded' WHERE id = $1`, id)
 	return id
+}
+
+// Caps are plan limits for tests; nil means unlimited.
+type Caps struct {
+	Agents, Minutes, Departments, Widgets *int
+	StorageBytes                          *int64
+}
+
+// Int returns a pointer to n, for building Caps.
+func Int(n int) *int { return &n }
+
+// Int64 returns a pointer to n, for building Caps.
+func Int64(n int64) *int64 { return &n }
+
+// PlanFor puts the tenant on a new private plan with the given caps, so tests can change limits
+// without touching the shared free plan. The plan is removed (with the tenant) when the test ends.
+func (f *Fixture) PlanFor(tenantID uuid.UUID, caps Caps) uuid.UUID {
+	f.T.Helper()
+	var id uuid.UUID
+	f.InPlatform(func(q database.Querier) {
+		code := "t-" + uuid.NewString()[:8]
+		if err := q.QueryRow(f.Ctx, `
+			INSERT INTO plans (code, name, max_agents, max_call_minutes_per_month, max_storage_bytes, max_departments, max_widgets)
+			VALUES ($1, $1, $2, $3, $4, $5, $6) RETURNING id`,
+			code, caps.Agents, caps.Minutes, caps.StorageBytes, caps.Departments, caps.Widgets).Scan(&id); err != nil {
+			f.T.Fatalf("create plan: %v", err)
+		}
+		if _, err := q.Exec(f.Ctx, `UPDATE subscriptions SET plan_id = $2 WHERE tenant_id = $1`, tenantID, id); err != nil {
+			f.T.Fatalf("assign plan: %v", err)
+		}
+	})
+	f.T.Cleanup(func() {
+		// The subscription points at the plan, so the tenant goes first.
+		_ = f.DB.InPlatform(context.Background(), func(ctx context.Context) error {
+			q, _ := database.Conn(ctx)
+			if _, err := q.Exec(ctx, `DELETE FROM tenants WHERE id = $1`, tenantID); err != nil {
+				return err
+			}
+			_, err := q.Exec(ctx, `DELETE FROM plans WHERE id = $1`, id)
+			return err
+		})
+	})
+	return id
+}
+
+// AnsweredCall inserts a finished call that was answered at the given time and lasted the given
+// number of seconds.
+func (f *Fixture) AnsweredCall(tenantID, departmentID, agentID uuid.UUID, answered time.Time, seconds int) uuid.UUID {
+	f.T.Helper()
+	id := f.Call(tenantID, departmentID, time.Minute)
+	f.Exec(`
+		UPDATE calls SET status = 'completed', assigned_agent_id = $2, answered_at = $3::timestamptz, ended_at = $3::timestamptz + make_interval(secs => $4),
+		    end_reason = 'agent_ended' WHERE id = $1`, id, agentID, answered, seconds)
+	return id
+}
+
+// Recording inserts a ready recording of the given size for a call.
+func (f *Fixture) Recording(tenantID, callID uuid.UUID, sizeBytes int64) {
+	f.T.Helper()
+	f.Exec(`
+		INSERT INTO recordings (tenant_id, call_id, status, storage_key, size_bytes, duration_seconds, egress_id, ended_at)
+		VALUES ($1, $2, 'ready', 'k', $3, 60, $4, now())`, tenantID, callID, sizeBytes, "EG_"+uuid.NewString()[:8])
 }

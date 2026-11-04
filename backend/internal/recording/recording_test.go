@@ -56,6 +56,10 @@ func (m *fakeMedia) JoinToken(string, media.Participant) (string, error)    { re
 func (m *fakeMedia) PublicURL() string                                      { return "ws://x" }
 func (m *fakeMedia) ParseWebhook(*http.Request) (media.Event, error)        { return media.Event{}, nil }
 
+type noUsage struct{}
+
+func (noUsage) CheckUsage(uuid.UUID) {}
+
 type env struct {
 	*dbtest.Fixture
 	svc   *recording.Service
@@ -67,7 +71,7 @@ func setup(t *testing.T) *env {
 	f := dbtest.New(t)
 	mp := &fakeMedia{}
 	repo := recording.NewRepository()
-	svc := recording.NewService(f.DB, repo, mp, fakeStore{}, audit.NewRecorder(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	svc := recording.NewService(f.DB, repo, mp, fakeStore{}, audit.NewRecorder(), noUsage{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	return &env{Fixture: f, svc: svc, repo: repo, media: mp}
 }
 

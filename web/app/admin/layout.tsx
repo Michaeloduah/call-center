@@ -6,6 +6,7 @@ const nav = [
   { href: "/admin/users", label: "Users" },
   { href: "/admin/departments", label: "Departments" },
   { href: "/admin/widgets", label: "Widgets" },
+  { href: "/admin/billing", label: "Billing" },
   { href: "/calls", label: "Call history" },
   { href: "/callbacks", label: "Callbacks" },
   { href: "/live", label: "Live board" },

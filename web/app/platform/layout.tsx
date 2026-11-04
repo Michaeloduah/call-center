@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/server/session";
 
 const nav = [
   { href: "/platform/tenants", label: "Tenants" },
+  { href: "/platform/plans", label: "Plans" },
   { href: "/platform/recordings/deleted", label: "Deleted recordings" },
   { href: "/platform/audit-logs", label: "Audit log" },
   { href: "/platform/settings", label: "Settings" },

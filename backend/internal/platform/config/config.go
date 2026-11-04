@@ -22,7 +22,20 @@ type Config struct {
 	SMTP            SMTPConfig
 	LiveKit         LiveKitConfig
 	Storage         StorageConfig
+	Billing         BillingConfig
 	ShutdownTimeout time.Duration
+}
+
+// BillingConfig selects and configures payment providers (D13, D19).
+type BillingConfig struct {
+	// Fake replaces every provider with an in-memory one (development and tests only).
+	Fake       bool
+	FakeSecret string
+	// PaystackCurrencies are charged through Paystack; every other currency goes to Stripe.
+	PaystackCurrencies []string
+	PaystackSecretKey  string
+	StripeSecretKey    string
+	StripeWebhookKey   string
 }
 
 // StorageConfig is the S3-compatible object store that holds call recordings. The same store is
@@ -107,6 +120,21 @@ func Load() (Config, error) {
 	}
 
 	var err error
+	if cfg.Billing.Fake, err = strconv.ParseBool(getDefault("BILLING_FAKE", strconv.FormatBool(cfg.Env != "production"))); err != nil {
+		errs = append(errs, fmt.Errorf("BILLING_FAKE: %w", err))
+	}
+	if cfg.Billing.Fake && cfg.IsProduction() {
+		errs = append(errs, errors.New("BILLING_FAKE must not be enabled in production"))
+	}
+	cfg.Billing.FakeSecret = getDefault("BILLING_FAKE_SECRET", "fake-billing-dev-secret")
+	cfg.Billing.PaystackSecretKey = getDefault("PAYSTACK_SECRET_KEY", "")
+	cfg.Billing.StripeSecretKey = getDefault("STRIPE_SECRET_KEY", "")
+	cfg.Billing.StripeWebhookKey = getDefault("STRIPE_WEBHOOK_SECRET", "")
+	for _, c := range strings.Split(getDefault("BILLING_PAYSTACK_CURRENCIES", "NGN"), ",") {
+		if c = strings.ToUpper(strings.TrimSpace(c)); c != "" {
+			cfg.Billing.PaystackCurrencies = append(cfg.Billing.PaystackCurrencies, c)
+		}
+	}
 	if cfg.SMTP.Port, err = strconv.Atoi(getDefault("SMTP_PORT", "587")); err != nil {
 		errs = append(errs, fmt.Errorf("SMTP_PORT: %w", err))
 	}

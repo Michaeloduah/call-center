@@ -1,4 +1,13 @@
-import type { AgentState, CallStatus, CallbackStatus, RecordingStatus, Role, TenantStatus, UserStatus } from "@/lib/types";
+import type {
+  AgentState,
+  CallStatus,
+  CallbackStatus,
+  RecordingStatus,
+  Role,
+  SubscriptionStatus,
+  TenantStatus,
+  UserStatus,
+} from "@/lib/types";
 
 export const roleLabels: Record<Role, string> = {
   platform_admin: "Platform admin",
@@ -98,4 +107,43 @@ export const recordingStatusLabels: Record<RecordingStatus, string> = {
   recording: "Recording",
   ready: "Available",
   failed: "Unavailable",
+};
+
+/** Decimal digits a currency uses (2 for USD, 0 for JPY), from the platform's Intl data. */
+function currencyDigits(currency: string): number {
+  return new Intl.NumberFormat("en", { style: "currency", currency }).resolvedOptions().maximumFractionDigits ?? 2;
+}
+
+/** 4900, "USD" → "$49.00". Amounts are always integers in the currency's smallest unit. */
+export function formatMoney(minor: number, currency: string): string {
+  const digits = currencyDigits(currency);
+  return new Intl.NumberFormat("en", { style: "currency", currency }).format(minor / 10 ** digits);
+}
+
+/** "49.00", "USD" → 4900. Returns null for anything that is not a non-negative number. */
+export function toMinor(value: string, currency: string): number | null {
+  const trimmed = value.trim();
+  if (trimmed === "") return 0;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 10 ** currencyDigits(currency));
+}
+
+const GB = 1024 ** 3;
+
+export function formatStorage(bytes: number): string {
+  if (bytes >= GB) return `${(bytes / GB).toFixed(bytes >= 10 * GB ? 0 : 1)} GB`;
+  return `${Math.round(bytes / 1024 ** 2)} MB`;
+}
+
+/** Whole minutes of call time, for usage meters. */
+export function formatMinutes(seconds: number): string {
+  return `${Math.floor(seconds / 60)} min`;
+}
+
+export const subscriptionStatusLabels: Record<SubscriptionStatus, string> = {
+  active: "Active",
+  past_due: "Payment overdue",
+  cancelled: "Cancelled",
+  incomplete: "Incomplete",
 };

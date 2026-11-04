@@ -7,6 +7,7 @@ import (
 
 	"callcenter/internal/audit"
 	"callcenter/internal/auth"
+	"callcenter/internal/billing"
 	"callcenter/internal/board"
 	"callcenter/internal/call"
 	"callcenter/internal/callback"
@@ -123,6 +124,29 @@ func (a *App) Handler() http.Handler {
 	mux.Handle("POST /v1/agent/offers/{id}/decline", tenantUser(rh.Decline))
 	mux.Handle("GET /v1/agent/calls/{id}/media", tenantUser(rh.Media))
 	mux.Handle("POST /v1/agent/calls/{id}/end", tenantUser(ch.AgentEnd))
+
+	// Billing
+	billh := billing.NewHandler(a.Billing)
+	mux.Handle("GET /v1/platform/plans", platformOnly(billh.ListPlans))
+	mux.Handle("POST /v1/platform/plans", platformOnly(billh.CreatePlan))
+	mux.Handle("GET /v1/platform/plans/{id}", platformOnly(billh.GetPlan))
+	mux.Handle("PUT /v1/platform/plans/{id}", platformOnly(billh.UpdatePlan))
+	mux.Handle("DELETE /v1/platform/plans/{id}", platformOnly(billh.DeletePlan))
+	mux.Handle("POST /v1/platform/plans/{id}/prices", platformOnly(billh.CreatePrice))
+	mux.Handle("PUT /v1/platform/prices/{id}", platformOnly(billh.UpdatePrice))
+	mux.Handle("DELETE /v1/platform/prices/{id}", platformOnly(billh.DeletePrice))
+	mux.Handle("POST /v1/platform/prices/{id}/sync", platformOnly(billh.SyncPrice))
+	mux.Handle("GET /v1/platform/tenants/{id}/billing", platformOnly(billh.PlatformTenantBilling))
+	mux.Handle("GET /v1/plans", tenantUser(billh.Plans))
+	mux.Handle("GET /v1/admin/billing", tenantAdmin(billh.Overview))
+	mux.Handle("PUT /v1/admin/billing/policies", tenantAdmin(billh.SetPolicies))
+	mux.Handle("POST /v1/admin/billing/checkout", tenantAdmin(billh.Checkout))
+	mux.Handle("POST /v1/admin/billing/cancel", tenantAdmin(billh.Cancel))
+	mux.HandleFunc("POST /v1/webhooks/paystack", billh.Webhook(billing.ProviderPaystack))
+	mux.HandleFunc("POST /v1/webhooks/stripe", billh.Webhook(billing.ProviderStripe))
+	if a.FakeBilling != nil { // development only: simulated provider events
+		mux.HandleFunc("POST /v1/webhooks/fake", billh.Webhook(billing.ProviderFake))
+	}
 
 	// Chat
 	chh := chat.NewHandler(a.Chat)

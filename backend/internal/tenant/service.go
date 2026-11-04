@@ -61,6 +61,9 @@ func (p *Provisioner) provision(ctx context.Context, name, status string, admin 
 			if err := p.repo.InsertDefaultSettings(ctx, t.ID); err != nil {
 				return nil, user.User{}, err
 			}
+			if err := p.repo.InsertFreeSubscription(ctx, t.ID); err != nil {
+				return nil, user.User{}, err
+			}
 			admin.TenantID = t.ID
 			admin.Role = reqctx.RoleTenantAdmin
 			u, err := p.users.Insert(ctx, admin)

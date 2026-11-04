@@ -15,6 +15,8 @@ type Repository interface {
 	// InsertIfSlugFree returns nil, nil when the slug is already taken.
 	InsertIfSlugFree(ctx context.Context, name, slug, status string) (*Tenant, error)
 	InsertDefaultSettings(ctx context.Context, tenantID uuid.UUID) error
+	// InsertFreeSubscription puts the tenant on the free plan for the current UTC calendar month.
+	InsertFreeSubscription(ctx context.Context, tenantID uuid.UUID) error
 	List(ctx context.Context, f Filter, page httpx.Page) ([]Summary, int, error)
 	Get(ctx context.Context, id uuid.UUID) (*Tenant, error)
 	Counts(ctx context.Context, id uuid.UUID) (users, departments int, err error)
@@ -53,6 +55,15 @@ func (pgRepository) InsertIfSlugFree(ctx context.Context, name, slug, status str
 		return nil, fmt.Errorf("insert tenant: %w", err)
 	}
 	return &t, nil
+}
+
+func (pgRepository) InsertFreeSubscription(ctx context.Context, tenantID uuid.UUID) error {
+	return exec(ctx, "insert free subscription", `
+		INSERT INTO subscriptions (tenant_id, plan_id, status, current_period_start, current_period_end)
+		SELECT $1, p.id, 'active',
+		       date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC',
+		       (date_trunc('month', now() AT TIME ZONE 'UTC') + interval '1 month') AT TIME ZONE 'UTC'
+		FROM plans p WHERE p.is_free`, tenantID)
 }
 
 func (pgRepository) InsertDefaultSettings(ctx context.Context, tenantID uuid.UUID) error {

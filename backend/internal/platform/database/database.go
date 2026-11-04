@@ -110,10 +110,11 @@ func IsUniqueViolation(err error, constraint string) bool {
 	return constraint == "" || pgErr.ConstraintName == constraint
 }
 
-// IsForeignKeyViolation reports whether err is a foreign-key violation.
+// IsForeignKeyViolation reports whether err is a foreign-key violation, including a RESTRICT
+// that refuses to delete or change a row that is still referenced.
 func IsForeignKeyViolation(err error) bool {
 	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23503"
+	return errors.As(err, &pgErr) && (pgErr.Code == "23503" || pgErr.Code == "23001")
 }
 
 // IsNoRows reports whether err means the query matched nothing.

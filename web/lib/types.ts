@@ -176,7 +176,7 @@ export interface Widget {
   updated_at: string;
 }
 
-export type Availability = "open" | "closed" | "unavailable" | "no_agents";
+export type Availability = "open" | "closed" | "unavailable" | "no_agents" | "limit_reached";
 
 /** Caller-facing widget configuration (public, contains nothing secret). */
 export interface PublicWidgetConfig {
@@ -379,4 +379,98 @@ export interface Callback {
   resolution_notes: string;
   resolved_at: string | null;
   created_at: string;
+}
+
+// ── Plans, subscriptions & billing ───────────────────────────────────────────
+
+export type PlanInterval = "monthly" | "yearly";
+export type SubscriptionStatus = "active" | "past_due" | "cancelled" | "incomplete";
+export type CapPolicy = "block" | "overage";
+
+/** A plan's limits. null means unlimited. */
+export interface PlanLimits {
+  max_agents: number | null;
+  max_call_minutes_per_month: number | null;
+  max_storage_bytes: number | null;
+  max_departments: number | null;
+  max_widgets: number | null;
+}
+
+export interface PlanPrice {
+  id: string;
+  plan_id: string;
+  currency: string;
+  interval: PlanInterval;
+  amount_minor: number;
+  overage_per_minute_minor: number;
+  overage_per_gb_minor: number;
+  provider: "paystack" | "stripe" | "fake";
+  synced: boolean;
+  is_active: boolean;
+}
+
+export interface Plan extends PlanLimits {
+  id: string;
+  code: string;
+  name: string;
+  description: string;
+  is_free: boolean;
+  is_public: boolean;
+  is_active: boolean;
+  prices: PlanPrice[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Subscription {
+  id: string;
+  tenant_id: string;
+  plan_id: string;
+  plan_price_id: string | null;
+  provider: string | null;
+  status: SubscriptionStatus;
+  past_due_since: string | null;
+  cancel_at_period_end: boolean;
+  current_period_start: string;
+  current_period_end: string;
+}
+
+export interface Usage {
+  agents: number;
+  departments: number;
+  widgets: number;
+  call_seconds: number;
+  storage_bytes: number;
+}
+
+export interface Payment {
+  id: string;
+  kind: "subscription" | "overage";
+  provider: string;
+  reference: string;
+  amount_minor: number;
+  currency: string;
+  status: "succeeded" | "failed" | "refunded";
+  failure: string | null;
+  paid_at: string;
+}
+
+export interface BillingOverview {
+  subscription: Subscription;
+  plan: Plan;
+  price: PlanPrice | null;
+  limits: PlanLimits;
+  policies: { minutes_cap_policy: CapPolicy; storage_cap_policy: CapPolicy };
+  usage: Usage;
+  agents_without_seat: { id: string; full_name: string }[];
+  payments: Payment[];
+  plans: Plan[];
+}
+
+export interface PlatformTenantBilling {
+  subscription: Subscription;
+  plan: Plan;
+  price: PlanPrice | null;
+  usage: Usage;
+  payments: Payment[];
 }

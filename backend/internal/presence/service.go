@@ -3,19 +3,28 @@ package presence
 import (
 	"context"
 
+	"github.com/google/uuid"
+
+	"callcenter/internal/limits"
 	"callcenter/internal/platform/database"
 	"callcenter/internal/platform/reqctx"
 	"callcenter/internal/realtime"
 )
 
+// Seats decides whether an agent holds one of the plan's agent seats (implemented by limits.Service).
+type Seats interface {
+	HoldsSeat(ctx context.Context, tenantID, userID uuid.UUID) (bool, error)
+}
+
 type Service struct {
 	tx         database.TxManager
 	repo       Repository
 	dispatcher Dispatcher
+	seats      Seats
 }
 
-func NewService(tx database.TxManager, repo Repository, dispatcher Dispatcher) *Service {
-	return &Service{tx: tx, repo: repo, dispatcher: dispatcher}
+func NewService(tx database.TxManager, repo Repository, dispatcher Dispatcher, seats Seats) *Service {
+	return &Service{tx: tx, repo: repo, dispatcher: dispatcher, seats: seats}
 }
 
 // SetStatus records the signed-in agent's choice. Any change may free or remove an agent, so
@@ -35,6 +44,15 @@ func (s *Service) SetStatus(ctx context.Context, status Status) error {
 		}
 		if len(departments) == 0 {
 			return errNotAgent
+		}
+		if status == StatusAvailable {
+			holds, err := s.seats.HoldsSeat(ctx, p.TenantID, p.UserID)
+			if err != nil {
+				return err
+			}
+			if !holds {
+				return limits.ErrSeatNotHeld
+			}
 		}
 		if err := s.repo.SetStatus(ctx, p.TenantID, p.UserID, status); err != nil {
 			return err

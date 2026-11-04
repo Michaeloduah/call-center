@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"callcenter/internal/audit"
+	"callcenter/internal/limits"
 	"callcenter/internal/platform/apperr"
 	"callcenter/internal/platform/database"
 	"callcenter/internal/platform/httpx"
@@ -19,6 +20,12 @@ type UserDirectory interface {
 	Accounts(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]user.Account, error)
 }
 
+// Limits enforces the tenant's plan (implemented by limits.Service).
+type Limits interface {
+	CheckCreate(ctx context.Context, tenantID uuid.UUID, kind limits.Kind) error
+	CheckSeatsForDepartment(ctx context.Context, tenantID, departmentID uuid.UUID, userIDs []uuid.UUID) error
+}
+
 type AuditRecorder interface {
 	Record(ctx context.Context, e audit.Entry) error
 }
@@ -29,10 +36,11 @@ type Service struct {
 	repo  Repository
 	users UserDirectory
 	audit AuditRecorder
+	plan  Limits
 }
 
-func NewService(tx database.TxManager, repo Repository, users UserDirectory, recorder AuditRecorder) *Service {
-	return &Service{tx: tx, repo: repo, users: users, audit: recorder}
+func NewService(tx database.TxManager, repo Repository, users UserDirectory, recorder AuditRecorder, plan Limits) *Service {
+	return &Service{tx: tx, repo: repo, users: users, audit: recorder, plan: plan}
 }
 
 func (s *Service) List(ctx context.Context, f Filter, page httpx.Page) ([]Summary, int, error) {
@@ -59,6 +67,9 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID) (*Detail, error) {
 func (s *Service) Create(ctx context.Context, in Input) (*Department, error) {
 	var d *Department
 	err := s.inTenant(ctx, func(ctx context.Context, tenantID uuid.UUID) (err error) {
+		if err := s.plan.CheckCreate(ctx, tenantID, limits.KindDepartments); err != nil {
+			return err
+		}
 		if d, err = s.repo.Insert(ctx, tenantID, in); err != nil {
 			return err
 		}
@@ -106,19 +117,20 @@ func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 func (s *Service) SetMembers(ctx context.Context, id uuid.UUID, in UsersInput) (*Detail, error) {
 	return s.setUsers(ctx, id, in, audit.ActionDepartmentMembers, s.repo.ReplaceMembers,
 		func(a user.Account) bool { return a.Status != user.StatusDisabled },
-		"Every member must be an existing, non-disabled user.")
+		"Every member must be an existing, non-disabled user.", s.plan.CheckSeatsForDepartment)
 }
 
 // SetSupervisors replaces the supervisors who can see the department. Only supervisor-role users qualify.
 func (s *Service) SetSupervisors(ctx context.Context, id uuid.UUID, in UsersInput) (*Detail, error) {
 	return s.setUsers(ctx, id, in, audit.ActionDepartmentSupervisor, s.repo.ReplaceSupervisors,
 		func(a user.Account) bool { return a.Role == reqctx.RoleSupervisor && a.Status != user.StatusDisabled },
-		"Every supervisor must be an existing, non-disabled user with the Supervisor role.")
+		"Every supervisor must be an existing, non-disabled user with the Supervisor role.", nil)
 }
 
 func (s *Service) setUsers(ctx context.Context, id uuid.UUID, in UsersInput, action string,
 	replace func(ctx context.Context, tenantID, id uuid.UUID, userIDs []uuid.UUID) error,
-	eligible func(user.Account) bool, invalidMsg string) (*Detail, error) {
+	eligible func(user.Account) bool, invalidMsg string,
+	precheck func(ctx context.Context, tenantID, id uuid.UUID, userIDs []uuid.UUID) error) (*Detail, error) {
 	var d *Detail
 	err := s.inTenant(ctx, func(ctx context.Context, tenantID uuid.UUID) (err error) {
 		if _, err := s.mustGet(ctx, tenantID, id); err != nil {
@@ -131,6 +143,11 @@ func (s *Service) setUsers(ctx context.Context, id uuid.UUID, in UsersInput, act
 		for _, uid := range in.UserIDs {
 			if a, ok := accounts[uid]; !ok || !eligible(a) {
 				return apperr.Validation(map[string]string{"user_ids": invalidMsg})
+			}
+		}
+		if precheck != nil {
+			if err := precheck(ctx, tenantID, id, in.UserIDs); err != nil {
+				return err
 			}
 		}
 		if err := replace(ctx, tenantID, id, in.UserIDs); err != nil {

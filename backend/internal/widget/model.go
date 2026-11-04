@@ -63,10 +63,11 @@ type Filter struct {
 type Availability string
 
 const (
-	AvailabilityOpen        Availability = "open"
-	AvailabilityClosed      Availability = "closed"      // outside business hours
-	AvailabilityUnavailable Availability = "unavailable" // department deactivated
-	AvailabilityNoAgents    Availability = "no_agents"   // open, but no agent is online to take a call
+	AvailabilityOpen         Availability = "open"
+	AvailabilityClosed       Availability = "closed"        // outside business hours
+	AvailabilityUnavailable  Availability = "unavailable"   // department deactivated
+	AvailabilityNoAgents     Availability = "no_agents"     // open, but no agent is online to take a call
+	AvailabilityLimitReached Availability = "limit_reached" // the plan's minutes or storage cap is reached and blocks new calls
 )
 
 // Resolved is everything the public side needs about a widget, loaded in one query.
@@ -81,15 +82,17 @@ type Resolved struct {
 	// AgentsAvailable is true when at least one department member is available with a live heartbeat.
 	// Agents currently on a call still count: the caller waits in the queue for them.
 	AgentsAvailable bool
-	Timezone        string
-	Hours           []department.HoursRange
-	PublicKey       string
-	AllowedOrigins  []string
-	ButtonLabel     string
-	AccentColor     string
-	Greeting        string
-	CallerForm      CallerForm
-	ConsentText     string // tenant override, else platform default
+	// CapReached is set by the service from the tenant's plan; it is not read from the widget row.
+	CapReached     bool
+	Timezone       string
+	Hours          []department.HoursRange
+	PublicKey      string
+	AllowedOrigins []string
+	ButtonLabel    string
+	AccentColor    string
+	Greeting       string
+	CallerForm     CallerForm
+	ConsentText    string // tenant override, else platform default
 }
 
 // PublicConfig is the caller-facing widget configuration. It contains nothing secret.

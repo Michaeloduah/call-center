@@ -11,10 +11,17 @@ import (
 
 	"callcenter/internal/audit"
 	"callcenter/internal/department"
+	"callcenter/internal/limits"
 	"callcenter/internal/platform/database"
 	"callcenter/internal/platform/httpx"
 	"callcenter/internal/platform/reqctx"
 )
+
+// Limits enforces the tenant's plan (implemented by limits.Service).
+type Limits interface {
+	CheckCreate(ctx context.Context, tenantID uuid.UUID, kind limits.Kind) error
+	CallsBlocked(ctx context.Context, tenantID uuid.UUID) (bool, error)
+}
 
 type AuditRecorder interface {
 	Record(ctx context.Context, e audit.Entry) error
@@ -25,11 +32,12 @@ type Service struct {
 	tx    database.TxManager
 	repo  Repository
 	audit AuditRecorder
+	plan  Limits
 	now   func() time.Time
 }
 
-func NewService(tx database.TxManager, repo Repository, recorder AuditRecorder) *Service {
-	return &Service{tx: tx, repo: repo, audit: recorder, now: time.Now}
+func NewService(tx database.TxManager, repo Repository, recorder AuditRecorder, plan Limits) *Service {
+	return &Service{tx: tx, repo: repo, audit: recorder, plan: plan, now: time.Now}
 }
 
 func (s *Service) List(ctx context.Context, f Filter, page httpx.Page) ([]Widget, int, error) {
@@ -60,6 +68,9 @@ func (s *Service) Create(ctx context.Context, in Input) (*Widget, error) {
 	}
 	var w *Widget
 	err = s.inTenant(ctx, func(ctx context.Context, tenantID uuid.UUID) error {
+		if err := s.plan.CheckCreate(ctx, tenantID, limits.KindWidgets); err != nil {
+			return err
+		}
 		id, err := s.repo.Insert(ctx, tenantID, key, in)
 		if err != nil {
 			return err
@@ -113,7 +124,10 @@ func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 func (s *Service) Public(ctx context.Context, publicKey string) (*PublicConfig, error) {
 	var r *Resolved
 	err := s.tx.InPlatform(ctx, func(ctx context.Context) (err error) {
-		r, err = s.repo.Resolve(ctx, publicKey)
+		if r, err = s.repo.Resolve(ctx, publicKey); err != nil || r == nil {
+			return err
+		}
+		r.CapReached, err = s.plan.CallsBlocked(ctx, r.TenantID)
 		return err
 	})
 	if err != nil {
@@ -154,6 +168,8 @@ func AvailabilityOf(r *Resolved, now time.Time) (Availability, error) {
 	switch {
 	case !open:
 		return AvailabilityClosed, nil
+	case r.CapReached:
+		return AvailabilityLimitReached, nil
 	case !r.AgentsAvailable:
 		return AvailabilityNoAgents, nil
 	default:

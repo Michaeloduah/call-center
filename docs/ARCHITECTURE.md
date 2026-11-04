@@ -1,6 +1,6 @@
-# CallCenter — Architecture & Data Model (v0.6)
+# CallCenter — Architecture & Data Model (v0.7)
 
-Status: **M1 (foundation), M2 (widgets & caller side), M3 (routing & consoles) and M4 (chat, recording, callbacks & history) implemented**; M5–M6 not started. Details of M3 and M4 and where they differ from earlier versions are in [M3-DESIGN.md](M3-DESIGN.md) and [M4-DESIGN.md](M4-DESIGN.md). Each item is labelled **Decision** (you confirmed it),
+Status: **M1 (foundation), M2 (widgets & caller side), M3 (routing & consoles) and M4 (chat, recording, callbacks & history) and M5 (plans, billing & limits) implemented**; M6 not started. Details of M3 and M4 and where they differ from earlier versions are in [M3-DESIGN.md](M3-DESIGN.md), [M4-DESIGN.md](M4-DESIGN.md) and [M5-DESIGN.md](M5-DESIGN.md). Each item is labelled **Decision** (you confirmed it),
 **Proposal** (my recommendation, needs your OK), **Assumption** (I am guessing, please correct me) or **Open question**.
 
 ---
@@ -49,6 +49,8 @@ over voice calls that run on the internet (WebRTC) instead of the phone network,
 | D26 | Event fan-out uses Postgres **LISTEN/NOTIFY** (sent inside the transaction, delivered on commit), so **Redis is not required** until LiveKit or hosting needs it. |
 | D28 | **Redis is used by LiveKit and its recorder (Egress) only**; the Go API does not use it. Recordings go to an S3-compatible store (MinIO in development), played back through 5-minute presigned links that are audit-logged. |
 | D29 | Recording starts when the agent **accepts** the call (the recorder needs 5–8 s to start, so the opening seconds are lost; see M4-DESIGN §17). A recording failure never ends the call. |
+| D30 | Payment providers are thin **stdlib HTTP clients** (no vendor SDK) behind `billing.Provider`; subscription state changes **only** from verified webhooks. In development every payment is simulated by an in-memory provider. **Live Paystack and Stripe runs are still outstanding** (see the checklist in M5-DESIGN §17). |
+| D31 | Plan changes are a new checkout that replaces the old subscription immediately, with **no proration or refund**. After a downgrade the earliest department memberships keep their agent seats; nothing is deleted. |
 | D27 | An agent's `busy`/`ringing` state is **derived** from calls and offers, never stored. The database enforces one pending offer and one active call per agent. |
 
 ---
@@ -386,13 +388,11 @@ plans
   max_agents, max_call_minutes_per_month, max_storage_bytes, max_departments, max_widgets  (NULL = unlimited)
   UNIQUE (is_free) WHERE is_free                                   -- exactly one free tier
 
-plan_prices
+plan_prices                                   -- built in M5
   id, plan_id FK, currency, interval (monthly|yearly), amount_minor bigint, is_active,
-  overage_per_minute_minor bigint, overage_per_gb_minor bigint      -- D16; provider derived from currency (D19)
-
-plan_price_provider_refs
-  plan_price_id FK, provider (paystack|stripe), external_id
-  PK (plan_price_id, provider)
+  overage_per_minute_minor bigint, overage_per_gb_minor bigint,     -- D16
+  provider (paystack|stripe|fake) derived from currency (D19), external_id NULL (set by "sync")
+  UNIQUE (plan_id, currency, interval)
 
 subscriptions
   id, tenant_id UNIQUE, plan_id FK, plan_price_id FK NULL (NULL on free),
@@ -539,5 +539,5 @@ All earlier open questions are now decided (D16–D24). These assumptions remain
 | M2 ✅ | **Widgets & caller side:** widget CRUD + caller-form config, widget.js + iframe, consent, public call creation, LiveKit room/tokens | A caller on a test site joins a room after the form and consent, and the call is `queued`. |
 | M3 ✅ | **Routing & consoles:** presence, dispatcher, offers/timeouts, SSE events, agent console, supervisor live board | Caller ↔ agent audio works end to end, including decline, timeout, abandon and missed. |
 | M4 ✅ | **Chat, recording, callbacks, history:** chat persistence + SendData, egress, recordings, playback, soft delete/restore, callback requests, call history pages | An admin plays a recording and reads its transcript. A missed caller leaves a callback that an agent claims and completes. |
-| M5 | **Plans & billing:** plan CRUD, free tier, Paystack, then Stripe, webhooks, subscriptions, limits + cap policies, usage snapshots + overage charging, 14-day grace sweeper, billing pages | A tenant upgrades through Paystack, the limits change, overage is charged at period close, and a failed payment downgrades after 14 days. |
+| M5 ✅ | **Plans & billing:** plan CRUD, free tier, Paystack, then Stripe, webhooks, subscriptions, limits + cap policies, usage snapshots + overage charging, 14-day grace sweeper, billing pages | A tenant upgrades through Paystack, the limits change, overage is charged at period close, and a failed payment downgrades after 14 days. |
 | M6 | **Hardening:** rate limits, observability, load/failure tests, deployment config | Ready for staging. |

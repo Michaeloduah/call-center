@@ -44,6 +44,18 @@ const (
 	ActionRecordingDownloaded  = "recording.downloaded"
 	ActionRecordingDeleted     = "recording.deleted"
 	ActionRecordingRestored    = "recording.restored"
+	ActionPlanCreated          = "plan.created"
+	ActionPlanUpdated          = "plan.updated"
+	ActionPlanDeleted          = "plan.deleted"
+	ActionPriceCreated         = "plan_price.created"
+	ActionPriceUpdated         = "plan_price.updated"
+	ActionPriceDeleted         = "plan_price.deleted"
+	ActionPriceSynced          = "plan_price.synced"
+	ActionSubscriptionActive   = "subscription.activated"
+	ActionSubscriptionFallback = "subscription.fell_back_to_free"
+	ActionCheckoutStarted      = "billing.checkout_started"
+	ActionSubscriptionCancel   = "billing.cancel_requested"
+	ActionCapPoliciesUpdated   = "billing.cap_policies_updated"
 )
 
 // Entry describes one action. TenantID is uuid.Nil for platform-level actions.

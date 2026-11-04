@@ -22,18 +22,24 @@ type AuditRecorder interface {
 	Record(ctx context.Context, e audit.Entry) error
 }
 
+// UsageWatcher is told when a recording adds to the tenant's storage (billing.Service).
+type UsageWatcher interface {
+	CheckUsage(tenantID uuid.UUID)
+}
+
 type Service struct {
 	tx     database.TxManager
 	repo   Repository
 	media  media.Provider
 	store  storage.Store
 	audit  AuditRecorder
+	usage  UsageWatcher
 	logger *slog.Logger
 	now    func() time.Time
 }
 
-func NewService(tx database.TxManager, repo Repository, mp media.Provider, store storage.Store, recorder AuditRecorder, logger *slog.Logger) *Service {
-	return &Service{tx: tx, repo: repo, media: mp, store: store, audit: recorder, logger: logger, now: time.Now}
+func NewService(tx database.TxManager, repo Repository, mp media.Provider, store storage.Store, recorder AuditRecorder, usage UsageWatcher, logger *slog.Logger) *Service {
+	return &Service{tx: tx, repo: repo, media: mp, store: store, audit: recorder, usage: usage, logger: logger, now: time.Now}
 }
 
 // objectKey is where a call's recording lives in the bucket.
@@ -88,9 +94,11 @@ func (s *Service) HandleMediaEvent(ctx context.Context, ev media.Event) error {
 	if ev.Kind != media.EventEgressEnded || ev.Recording == nil {
 		return nil
 	}
-	return s.tx.InPlatform(ctx, func(ctx context.Context) error {
-		found, err := s.repo.Finish(ctx, ev.EgressID, *ev.Recording)
-		if err != nil {
+	var tenantID uuid.UUID
+	err := s.tx.InPlatform(ctx, func(ctx context.Context) error {
+		var found bool
+		var err error
+		if tenantID, found, err = s.repo.Finish(ctx, ev.EgressID, *ev.Recording); err != nil {
 			return err
 		}
 		if !found {
@@ -98,6 +106,10 @@ func (s *Service) HandleMediaEvent(ctx context.Context, ev media.Event) error {
 		}
 		return nil
 	})
+	if err == nil && tenantID != uuid.Nil {
+		s.usage.CheckUsage(tenantID) // a new recording may have used up storage
+	}
+	return err
 }
 
 // Run marks recordings that never completed as failed, until ctx ends.
