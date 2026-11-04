@@ -1,0 +1,10 @@
+# LiveKit Egress configuration for LOCAL DEVELOPMENT ONLY (same throwaway key pair as livekit.yaml).
+# Egress runs in LiveKit's network namespace, so the server is reachable on localhost.
+log_level: info
+api_key: devkey
+api_secret: devsecret-devsecret-devsecret-devsecret
+ws_url: ws://localhost:7880
+redis:
+  address: redis:6379
+# Do not write the extra EG_<id>.json manifest next to each recording.
+disable_manifest: true

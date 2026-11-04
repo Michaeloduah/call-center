@@ -1,9 +1,6 @@
 package call
 
 import (
-	"regexp"
-	"strings"
-
 	"callcenter/internal/platform/validate"
 	"callcenter/internal/widget"
 )
@@ -16,26 +13,12 @@ type CreateInput struct {
 	Consent bool   `json:"consent"`
 }
 
-var (
-	phoneChars  = regexp.MustCompile(`^\+?[0-9 ()\-.]{6,32}$`)
-	phoneDigits = regexp.MustCompile(`[0-9]`)
-)
-
-const minPhoneDigits = 6
-
 // Validate checks formats only. Which fields are required depends on the widget, see ApplyForm.
 func (in *CreateInput) Validate() error {
 	v := validate.Errors{}
 	in.Name = v.OptionalString("name", in.Name, 120)
-	in.Phone = strings.TrimSpace(in.Phone)
-	if in.Phone != "" && (!phoneChars.MatchString(in.Phone) || len(phoneDigits.FindAllString(in.Phone, -1)) < minPhoneDigits) {
-		v.Add("phone", "Enter a valid phone number.")
-	}
-	if strings.TrimSpace(in.Email) != "" {
-		in.Email = v.Email("email", in.Email)
-	} else {
-		in.Email = ""
-	}
+	in.Phone = v.OptionalPhone("phone", in.Phone)
+	in.Email = v.OptionalEmail("email", in.Email)
 	return v.Err()
 }
 

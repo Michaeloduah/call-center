@@ -21,7 +21,22 @@ type Config struct {
 	TrustedProxies  []netip.Prefix // peers allowed to set X-Forwarded-For (the Next.js server)
 	SMTP            SMTPConfig
 	LiveKit         LiveKitConfig
+	Storage         StorageConfig
 	ShutdownTimeout time.Duration
+}
+
+// StorageConfig is the S3-compatible object store that holds call recordings. The same store is
+// reached at up to three addresses: by the API, by the recorder (inside the media network) and
+// by browsers playing a recording through a presigned URL.
+type StorageConfig struct {
+	Endpoint       string // host:port used by the API, e.g. localhost:19000
+	PublicEndpoint string // host:port browsers use; presigned URLs are signed for it
+	EgressEndpoint string // full URL the recorder uploads to, e.g. http://minio:9000
+	AccessKey      string
+	SecretKey      string
+	Bucket         string
+	Region         string
+	UseSSL         bool // for Endpoint and PublicEndpoint
 }
 
 type LiveKitConfig struct {
@@ -76,6 +91,15 @@ func Load() (Config, error) {
 			APIKey:    get("LIVEKIT_API_KEY"),
 			APISecret: get("LIVEKIT_API_SECRET"),
 		},
+		Storage: StorageConfig{
+			Endpoint:       get("STORAGE_ENDPOINT"),
+			PublicEndpoint: get("STORAGE_PUBLIC_ENDPOINT"),
+			EgressEndpoint: get("STORAGE_EGRESS_ENDPOINT"),
+			AccessKey:      get("STORAGE_ACCESS_KEY"),
+			SecretKey:      get("STORAGE_SECRET_KEY"),
+			Bucket:         get("STORAGE_BUCKET"),
+			Region:         getDefault("STORAGE_REGION", "us-east-1"),
+		},
 	}
 
 	if cfg.Env != "development" && cfg.Env != "production" {
@@ -85,6 +109,9 @@ func Load() (Config, error) {
 	var err error
 	if cfg.SMTP.Port, err = strconv.Atoi(getDefault("SMTP_PORT", "587")); err != nil {
 		errs = append(errs, fmt.Errorf("SMTP_PORT: %w", err))
+	}
+	if cfg.Storage.UseSSL, err = strconv.ParseBool(getDefault("STORAGE_USE_SSL", "false")); err != nil {
+		errs = append(errs, fmt.Errorf("STORAGE_USE_SSL: %w", err))
 	}
 	if cfg.SessionTTL, err = time.ParseDuration(getDefault("SESSION_TTL", "720h")); err != nil {
 		errs = append(errs, fmt.Errorf("SESSION_TTL: %w", err))

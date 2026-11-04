@@ -18,13 +18,15 @@ const CallerTokenHeader = "X-Caller-Token"
 
 type Handler struct {
 	svc         *Service
+	events      media.Listener
 	media       media.Provider
 	createLimit *httpx.RateLimiter
 	logger      *slog.Logger
 }
 
-func NewHandler(svc *Service, mp media.Provider, createLimit *httpx.RateLimiter, logger *slog.Logger) *Handler {
-	return &Handler{svc: svc, media: mp, createLimit: createLimit, logger: logger}
+// NewHandler builds the call endpoints. Verified media webhooks are delivered to events.
+func NewHandler(svc *Service, events media.Listener, mp media.Provider, createLimit *httpx.RateLimiter, logger *slog.Logger) *Handler {
+	return &Handler{svc: svc, events: events, media: mp, createLimit: createLimit, logger: logger}
 }
 
 // NewCreateLimiter bounds how many calls one IP can start.
@@ -109,7 +111,7 @@ func (h *Handler) MediaWebhook(w http.ResponseWriter, r *http.Request) {
 		httpx.Error(w, r, err)
 		return
 	}
-	if err := h.svc.HandleMediaEvent(r.Context(), ev); err != nil {
+	if err := h.events.HandleMediaEvent(r.Context(), ev); err != nil {
 		// A 5xx makes LiveKit retry the delivery.
 		httpx.Error(w, r, err)
 		return

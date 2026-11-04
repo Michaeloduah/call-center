@@ -135,7 +135,7 @@ func (s *Service) fail(ctx context.Context, id uuid.UUID, cause error) {
 func (s *Service) Status(ctx context.Context, id uuid.UUID, callerToken string) (*CallerView, error) {
 	var view *CallerView
 	err := s.tx.InPlatform(ctx, func(ctx context.Context) (err error) {
-		if view, err = s.authenticate(ctx, id, callerToken); err != nil {
+		if view, err = s.Authenticate(ctx, id, callerToken); err != nil {
 			return err
 		}
 		if view.Status == StatusQueued {
@@ -153,7 +153,7 @@ func (s *Service) Status(ctx context.Context, id uuid.UUID, callerToken string) 
 // HangUp ends the caller's call and closes its room. Ending an already-ended call is a no-op.
 func (s *Service) HangUp(ctx context.Context, id uuid.UUID, callerToken string) error {
 	return s.finish(ctx, func(ctx context.Context) (*EndedCall, error) {
-		if _, err := s.authenticate(ctx, id, callerToken); err != nil {
+		if _, err := s.Authenticate(ctx, id, callerToken); err != nil {
 			return nil, err
 		}
 		return s.repo.End(ctx, id, EndCallerHungUp)
@@ -229,7 +229,8 @@ func (s *Service) finish(ctx context.Context, end func(ctx context.Context) (*En
 	return nil
 }
 
-func (s *Service) authenticate(ctx context.Context, id uuid.UUID, callerToken string) (*CallerView, error) {
+// Authenticate checks a caller token against a call. It runs inside the caller's transaction.
+func (s *Service) Authenticate(ctx context.Context, id uuid.UUID, callerToken string) (*CallerView, error) {
 	if callerToken == "" || len(callerToken) > secret.MaxLen {
 		return nil, errInvalidCaller
 	}

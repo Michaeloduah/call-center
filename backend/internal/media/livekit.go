@@ -31,6 +31,7 @@ var ErrInvalidWebhook = errors.New("media: invalid webhook")
 
 type LiveKit struct {
 	rooms     *lksdk.RoomServiceClient
+	egress    *lksdk.EgressClient
 	keys      auth.KeyProvider
 	apiKey    string
 	apiSecret string
@@ -40,6 +41,7 @@ type LiveKit struct {
 func NewLiveKit(cfg config.LiveKitConfig) *LiveKit {
 	return &LiveKit{
 		rooms:     lksdk.NewRoomServiceClient(cfg.URL, cfg.APIKey, cfg.APISecret),
+		egress:    lksdk.NewEgressClient(cfg.URL, cfg.APIKey, cfg.APISecret),
 		keys:      auth.NewSimpleKeyProvider(cfg.APIKey, cfg.APISecret),
 		apiKey:    cfg.APIKey,
 		apiSecret: cfg.APISecret,
@@ -70,6 +72,35 @@ func (l *LiveKit) DeleteRoom(ctx context.Context, name string) error {
 	}
 	if err != nil {
 		return fmt.Errorf("livekit delete room: %w", err)
+	}
+	return nil
+}
+
+func (l *LiveKit) StartRecording(ctx context.Context, room string, t RecordingTarget) (string, error) {
+	info, err := l.egress.StartRoomCompositeEgress(ctx, &livekit.RoomCompositeEgressRequest{
+		RoomName:  room,
+		AudioOnly: true,
+		FileOutputs: []*livekit.EncodedFileOutput{{
+			FileType: livekit.EncodedFileType_OGG,
+			Filepath: t.Key,
+			Output: &livekit.EncodedFileOutput_S3{S3: &livekit.S3Upload{
+				AccessKey: t.AccessKey, Secret: t.Secret, Region: t.Region,
+				Endpoint: t.Endpoint, Bucket: t.Bucket, ForcePathStyle: true,
+			}},
+		}},
+	})
+	if err != nil {
+		return "", fmt.Errorf("livekit start recording: %w", err)
+	}
+	return info.GetEgressId(), nil
+}
+
+func (l *LiveKit) SendData(ctx context.Context, room, topic string, payload []byte) error {
+	_, err := l.rooms.SendData(ctx, &livekit.SendDataRequest{
+		Room: room, Data: payload, Kind: livekit.DataPacket_RELIABLE, Topic: &topic,
+	})
+	if err != nil {
+		return fmt.Errorf("livekit send data: %w", err)
 	}
 	return nil
 }
@@ -105,5 +136,27 @@ func (l *LiveKit) ParseWebhook(r *http.Request) (Event, error) {
 	if ev.GetParticipant() != nil {
 		out.ParticipantIdentity = ev.GetParticipant().GetIdentity()
 	}
+	if info := ev.GetEgressInfo(); info != nil {
+		out.EgressID = info.GetEgressId()
+		out.Room = info.GetRoomName()
+		out.Recording = recordingResult(info)
+	}
 	return out, nil
+}
+
+// recordingResult summarises a finished egress. A recording only counts as successful when the
+// recorder completed and produced a file.
+func recordingResult(info *livekit.EgressInfo) *RecordingResult {
+	r := &RecordingResult{Error: info.GetError()}
+	files := info.GetFileResults()
+	if info.GetStatus() == livekit.EgressStatus_EGRESS_COMPLETE && len(files) > 0 {
+		r.Succeeded = true
+		r.SizeBytes = files[0].GetSize()
+		r.Duration = time.Duration(files[0].GetDuration())
+		return r
+	}
+	if r.Error == "" {
+		r.Error = "recording ended with status " + info.GetStatus().String()
+	}
+	return r
 }

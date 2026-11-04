@@ -241,6 +241,7 @@ export interface AgentSession {
   state: AgentState;
   offer: Offer | null;
   call: ActiveCall | null;
+  open_callbacks: number;
   heartbeat_interval_seconds: number;
 }
 
@@ -280,4 +281,102 @@ export interface BoardDepartment {
 
 export interface Board {
   departments: BoardDepartment[];
+}
+
+// ── Recordings, chat, callbacks & call history ──────────────────────────────
+
+export type RecordingStatus = "starting" | "recording" | "ready" | "failed";
+
+export interface RecordingView {
+  id: string;
+  status: RecordingStatus;
+  duration_seconds: number | null;
+  size_bytes: number | null;
+  started_at: string;
+  ended_at: string | null;
+  error: string | null;
+}
+
+/** A short-lived link to a recording. Treat it like a password: never store or log it. */
+export interface AccessGrant {
+  url: string;
+  expires_at: string;
+}
+
+export interface DeletedRecording {
+  id: string;
+  call_id: string;
+  tenant_id: string;
+  tenant_name: string;
+  department_name: string;
+  caller_name: string | null;
+  duration_seconds: number | null;
+  size_bytes: number | null;
+  deleted_at: string;
+  deleted_by_email: string | null;
+}
+
+export interface ChatMessage {
+  id: string;
+  sender: "caller" | "agent";
+  name: string;
+  body: string;
+  sent_at: string;
+}
+
+export type CallRecordStatus = CallStatus;
+
+export interface CallListItem {
+  id: string;
+  status: CallStatus;
+  end_reason: string | null;
+  department_id: string;
+  department_name: string;
+  caller_name: string | null;
+  caller_phone: string | null;
+  agent_name: string | null;
+  queued_at: string;
+  answered_at: string | null;
+  ended_at: string | null;
+  duration_seconds: number | null;
+  recording_status: RecordingStatus | null;
+  message_count: number;
+}
+
+export interface OfferEntry {
+  agent_name: string | null;
+  offered_at: string;
+  responded_at: string | null;
+  outcome: "pending" | "accepted" | "declined" | "timeout" | "cancelled";
+}
+
+export interface CallDetail extends CallListItem {
+  caller_email: string | null;
+  consent_text: string;
+  consent_given_at: string;
+  offers: OfferEntry[];
+  recording: RecordingView | null;
+  messages: ChatMessage[];
+  callback: { id: string; status: CallbackStatus } | null;
+  permissions: { play_recording: boolean; delete_recording: boolean };
+}
+
+export type CallbackStatus = "open" | "claimed" | "completed" | "cancelled";
+
+export interface Callback {
+  id: string;
+  department_id: string;
+  department_name: string;
+  call_id: string | null;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  reason: string;
+  status: CallbackStatus;
+  claimed_by: string | null;
+  claimed_by_name: string | null;
+  claimed_at: string | null;
+  resolution_notes: string;
+  resolved_at: string | null;
+  created_at: string;
 }

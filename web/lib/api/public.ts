@@ -1,9 +1,16 @@
 import "server-only";
 
 import { apiFetch } from "@/lib/server/api";
-import type { CallCreateResult, CallerCallView, PublicWidgetConfig } from "@/lib/types";
+import type { CallCreateResult, CallerCallView, ChatMessage, PublicWidgetConfig } from "@/lib/types";
 
 const CALLER_TOKEN_HEADER = "X-Caller-Token";
+
+export interface CallbackBody {
+  name: string;
+  phone: string;
+  email: string;
+  reason: string;
+}
 
 /** Anonymous caller endpoints. Calls are authorised by their caller token, never by a session. */
 export const publicApi = {
@@ -17,6 +24,27 @@ export const publicApi = {
     }),
   getCall: (callId: string, callerToken: string) =>
     apiFetch<CallerCallView>(`/v1/public/calls/${encodeURIComponent(callId)}`, {
+      auth: false,
+      headers: { [CALLER_TOKEN_HEADER]: callerToken },
+    }),
+  messages: (callId: string, callerToken: string) =>
+    apiFetch<ChatMessage[]>(`/v1/public/calls/${encodeURIComponent(callId)}/messages`, {
+      auth: false,
+      headers: { [CALLER_TOKEN_HEADER]: callerToken },
+    }),
+  sendMessage: (callId: string, callerToken: string, body: string) =>
+    apiFetch<ChatMessage>(`/v1/public/calls/${encodeURIComponent(callId)}/messages`, {
+      method: "POST",
+      body: { body },
+      auth: false,
+      headers: { [CALLER_TOKEN_HEADER]: callerToken },
+    }),
+  createCallback: (publicKey: string, body: CallbackBody) =>
+    apiFetch<{ id: string }>(`/v1/public/widgets/${encodeURIComponent(publicKey)}/callbacks`, { method: "POST", body, auth: false }),
+  createCallbackForCall: (callId: string, callerToken: string, body: CallbackBody) =>
+    apiFetch<{ id: string }>(`/v1/public/calls/${encodeURIComponent(callId)}/callback`, {
+      method: "POST",
+      body,
       auth: false,
       headers: { [CALLER_TOKEN_HEADER]: callerToken },
     }),

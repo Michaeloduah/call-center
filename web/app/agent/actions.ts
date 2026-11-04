@@ -3,7 +3,7 @@
 import { agentApi } from "@/lib/api/agent";
 import type { ActionResult } from "@/lib/forms";
 import { attempt } from "@/lib/server/actions";
-import type { AcceptResult, AgentSession, AgentStatus, MediaGrant } from "@/lib/types";
+import type { AcceptResult, AgentSession, AgentStatus, ChatMessage, MediaGrant } from "@/lib/types";
 
 export async function sessionAction(): Promise<ActionResult<AgentSession>> {
   return attempt(() => agentApi.session());
@@ -31,4 +31,12 @@ export async function endCallAction(callId: string): Promise<ActionResult> {
 
 export async function mediaAction(callId: string): Promise<ActionResult<MediaGrant>> {
   return attempt(() => agentApi.media(callId));
+}
+
+export async function agentChatHistoryAction(callId: string): Promise<ActionResult<ChatMessage[]>> {
+  return attempt(() => agentApi.messages(callId));
+}
+
+export async function sendAgentChatAction(callId: string, body: string): Promise<ActionResult<ChatMessage>> {
+  return attempt(() => agentApi.sendMessage(callId, body));
 }

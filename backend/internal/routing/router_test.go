@@ -36,14 +36,30 @@ func (m *fakeMedia) DeleteRoom(_ context.Context, name string) error {
 	return nil
 }
 func (m *fakeMedia) JoinToken(string, media.Participant) (string, error) { return "token", nil }
-func (m *fakeMedia) PublicURL() string                                   { return "ws://livekit.test" }
-func (m *fakeMedia) ParseWebhook(*http.Request) (media.Event, error)     { return media.Event{}, nil }
+func (m *fakeMedia) StartRecording(context.Context, string, media.RecordingTarget) (string, error) {
+	return "EG_test", nil
+}
+func (m *fakeMedia) SendData(context.Context, string, string, []byte) error { return nil }
+func (m *fakeMedia) PublicURL() string                                      { return "ws://livekit.test" }
+func (m *fakeMedia) ParseWebhook(*http.Request) (media.Event, error)        { return media.Event{}, nil }
+
+type fakeRecorder struct {
+	mu      sync.Mutex
+	started []uuid.UUID
+}
+
+func (r *fakeRecorder) Start(_, callID uuid.UUID, _ string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.started = append(r.started, callID)
+}
 
 type env struct {
 	*dbtest.Fixture
 	router *routing.Router
 	svc    *routing.Service
 	media  *fakeMedia
+	rec    *fakeRecorder
 }
 
 func setup(t *testing.T) *env {
@@ -53,7 +69,8 @@ func setup(t *testing.T) *env {
 	members := presence.NewRepository()
 	repo := routing.NewRepository()
 	router := routing.NewRouter(f.DB, repo, members, mp, logger)
-	return &env{Fixture: f, router: router, svc: routing.NewService(f.DB, repo, members, mp, router), media: mp}
+	rec := &fakeRecorder{}
+	return &env{Fixture: f, router: router, svc: routing.NewService(f.DB, repo, members, mp, router, rec), media: mp, rec: rec}
 }
 
 func (e *env) dispatch(tenant uuid.UUID) {
@@ -397,6 +414,9 @@ func TestSessionReflectsOfferAndCall(t *testing.T) {
 	}
 	if s, err = e.svc.Session(ctx); err != nil || s.State != presence.StateOnCall || s.Call == nil {
 		t.Fatalf("on-call session = %+v, err %v", s, err)
+	}
+	if len(e.rec.started) != 1 || e.rec.started[0] != c {
+		t.Fatalf("recording started for %v, want exactly the accepted call", e.rec.started)
 	}
 	if _, err := e.svc.MediaToken(ctx, c); err != nil {
 		t.Fatalf("media token for own call: %v", err)

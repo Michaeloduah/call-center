@@ -29,6 +29,33 @@ services:
       MP_SMTP_AUTH_ACCEPT_ANY: "1"
       MP_SMTP_AUTH_ALLOW_INSECURE: "1"
 
+  # Redis is used by LiveKit and its recorder (Egress) only; the Go API does not use it.
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # S3-compatible object storage for call recordings (any S3 store works in production).
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: callcenter
+      MINIO_ROOT_PASSWORD: callcenter-dev-secret
+    ports:
+      - "19000:9000" # S3 API
+      - "19001:9001" # web console
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   livekit:
     image: livekit/livekit-server:v1.9.0
     command: ["--config", "/etc/livekit.yaml"]
@@ -40,6 +67,25 @@ services:
       - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
     extra_hosts:
       - "host.docker.internal:host-gateway" # lets webhooks reach the API on the host
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Records call rooms to MinIO. It shares LiveKit's network namespace so that the media address
+  # LiveKit advertises in development (127.0.0.1) is reachable from the recorder's browser.
+  egress:
+    image: livekit/egress:v1.9.1
+    network_mode: "service:livekit"
+    cap_add:
+      - SYS_ADMIN # headless Chrome sandbox
+    environment:
+      EGRESS_CONFIG_FILE: /etc/egress.yaml
+    volumes:
+      - ./livekit/egress.yaml:/etc/egress.yaml:ro
+    depends_on:
+      - livekit
+      - minio
 
 volumes:
   postgres-data:
+  minio-data:

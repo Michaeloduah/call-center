@@ -28,7 +28,14 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design, decisions and m
 - Supervisors and tenant admins get a live board (`/live`) of queues, calls in progress and agent states, limited to supervised departments. Updates reach browsers through Server-Sent Events backed by Postgres LISTEN/NOTIFY (no Redis needed yet).
 - The widget shows "an agent is being notified", "nobody is available" and "nobody answered" states.
 
-**Calls are not recorded yet** (M4), so do not expose this build to real callers.
+**M4 — Chat, recording, callbacks & history** is implemented:
+
+- Every answered call is recorded (LiveKit Egress → MinIO). Admins, and supervisors for their departments, play or download a recording through a 5-minute presigned link; each issue is audit-logged. Admins can soft-delete a recording (hidden, file kept); the platform admin sees deleted recordings and can restore them. Agents cannot play recordings.
+- In-call text chat between caller and agent (saved, delivered through LiveKit, only while the call is active) and a full transcript on the call detail page.
+- Callback requests when the department is closed, nobody is online, or a call goes unanswered; agents claim and complete them, admins can assign or cancel them and are emailed about new ones.
+- Call history (`/calls`) and callbacks (`/callbacks`) for every tenant role, scoped by what each role may see; the platform admin has `/platform/recordings/deleted`.
+
+Known limit: the recorder takes 5–8 seconds to start, so the first seconds of a call are not captured (see `docs/M4-DESIGN.md` §17).
 
 ## Layout
 
@@ -67,8 +74,9 @@ make web
 - API: http://localhost:8080 (health: `/healthz`)
 - Mailpit (all outgoing email in dev): http://localhost:18025
 - LiveKit (media server): ws://localhost:7880
+- MinIO (recordings): API http://localhost:19000, console http://localhost:19001 (login in `deploy/docker-compose.yml`)
 
-Host ports are non-default (Postgres 55432, SMTP 11025) to avoid clashing with other local services.
+Host ports are non-default (Postgres 55432, SMTP 11025, MinIO 19000) to avoid clashing with other local services. The stack also runs Redis and LiveKit Egress for recording; Egress starts a headless browser per recorded call, so a busy machine can make recordings fail with "Start signal not received". The API creates the `recordings` bucket on startup. After changing `deploy/livekit/*.yaml`, restart `livekit` and `egress` (`docker compose -f deploy/docker-compose.yml restart livekit egress`).
 
 ### First platform admin
 

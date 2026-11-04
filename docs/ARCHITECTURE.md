@@ -1,6 +1,6 @@
-# CallCenter — Architecture & Data Model (v0.5)
+# CallCenter — Architecture & Data Model (v0.6)
 
-Status: **M1 (foundation), M2 (widgets & caller side) and M3 (routing & consoles) implemented**; M4–M6 not started. Details of M3 and why it differs from v0.4 are in [M3-DESIGN.md](M3-DESIGN.md). Each item is labelled **Decision** (you confirmed it),
+Status: **M1 (foundation), M2 (widgets & caller side), M3 (routing & consoles) and M4 (chat, recording, callbacks & history) implemented**; M5–M6 not started. Details of M3 and M4 and where they differ from earlier versions are in [M3-DESIGN.md](M3-DESIGN.md) and [M4-DESIGN.md](M4-DESIGN.md). Each item is labelled **Decision** (you confirmed it),
 **Proposal** (my recommendation, needs your OK), **Assumption** (I am guessing, please correct me) or **Open question**.
 
 ---
@@ -47,6 +47,8 @@ over voice calls that run on the internet (WebRTC) instead of the phone network,
 | D24 | Chat is available **only once an agent has joined** (call `active`). |
 | D25 | Server → browser real-time events use **Server-Sent Events** through a Next.js route handler (the browser still talks only to Next.js), not WebSockets. Events are hints; clients re-read state. |
 | D26 | Event fan-out uses Postgres **LISTEN/NOTIFY** (sent inside the transaction, delivered on commit), so **Redis is not required** until LiveKit or hosting needs it. |
+| D28 | **Redis is used by LiveKit and its recorder (Egress) only**; the Go API does not use it. Recordings go to an S3-compatible store (MinIO in development), played back through 5-minute presigned links that are audit-logged. |
+| D29 | Recording starts when the agent **accepts** the call (the recorder needs 5–8 s to start, so the opening seconds are lost; see M4-DESIGN §17). A recording failure never ends the call. |
 | D27 | An agent's `busy`/`ringing` state is **derived** from calls and offers, never stored. The database enforces one pending offer and one active call per agent. |
 
 ---
@@ -62,7 +64,7 @@ flowchart LR
     WEB[Next.js web<br/>platform / admin / supervisor / agent]
     API[Go API<br/>REST + WebSocket]
     PG[(PostgreSQL)]
-    RD[(Redis<br/>not used yet)]
+    RD[(Redis<br/>LiveKit + Egress only)]
     LK[LiveKit server<br/>SFU + TURN]
     EG[LiveKit Egress]
     S3[(MinIO / S3<br/>recordings)]
@@ -93,7 +95,7 @@ flowchart LR
 | **Next.js web** | Platform console, tenant-admin console, supervisor live board, agent console, widget iframe page. No business logic. |
 | **widget.js** | Vanilla-JS loader the tenant pastes onto their site. It renders the button and opens the iframe with `allow="microphone"`, isolated from the host site's CSS and JS. |
 | **PostgreSQL** | The source of truth for all durable state, including presence and call assignment, because assignment must be transactional. |
-| **Redis** | Not used in M3 (D26). A single LiveKit node does not need it; it becomes necessary for a multi-node LiveKit or Egress. Real-time fan-out uses Postgres LISTEN/NOTIFY. |
+| **Redis** | Used by LiveKit and Egress only (D28); the API does not touch it. Real-time fan-out uses Postgres LISTEN/NOTIFY (D26). |
 | **LiveKit** | Media routing with built-in TURN for strict NAT and mobile networks. Its **data channel** carries chat messages. |
 | **LiveKit Egress** | Records each call room as a mixed audio-only file and uploads it to object storage. |
 | **MinIO / S3** | Private bucket. Playback only through short-lived presigned URLs issued after an authorization check. |
@@ -536,6 +538,6 @@ All earlier open questions are now decided (D16–D24). These assumptions remain
 | M1 ✅ | **Foundation:** monorepo, compose, migrations, RLS, auth (login, sessions, signup, email verification, reset, invites), platform tenant CRUD, tenant user CRUD, departments (members, supervisors, business hours), platform/tenant settings, audit log | Self-signup and admin-created tenants work. Admins invite agents and assign them to departments. Isolation tests pass. |
 | M2 ✅ | **Widgets & caller side:** widget CRUD + caller-form config, widget.js + iframe, consent, public call creation, LiveKit room/tokens | A caller on a test site joins a room after the form and consent, and the call is `queued`. |
 | M3 ✅ | **Routing & consoles:** presence, dispatcher, offers/timeouts, SSE events, agent console, supervisor live board | Caller ↔ agent audio works end to end, including decline, timeout, abandon and missed. |
-| M4 | **Chat, recording, callbacks, history:** chat persistence + SendData, egress, recordings, playback, soft delete/restore, callback requests, call history pages | An admin plays a recording and reads its transcript. A missed caller leaves a callback that an agent claims and completes. |
+| M4 ✅ | **Chat, recording, callbacks, history:** chat persistence + SendData, egress, recordings, playback, soft delete/restore, callback requests, call history pages | An admin plays a recording and reads its transcript. A missed caller leaves a callback that an agent claims and completes. |
 | M5 | **Plans & billing:** plan CRUD, free tier, Paystack, then Stripe, webhooks, subscriptions, limits + cap policies, usage snapshots + overage charging, 14-day grace sweeper, billing pages | A tenant upgrades through Paystack, the limits change, overage is charged at period close, and a failed payment downgrades after 14 days. |
 | M6 | **Hardening:** rate limits, observability, load/failure tests, deployment config | Ready for staging. |

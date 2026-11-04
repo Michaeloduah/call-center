@@ -3,7 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useActionState, useRef, useState, useTransition } from "react";
 
-import { type StartCallState, startCallAction } from "@/app/widget/actions";
+import { type CallbackTarget, type StartCallState, requestCallbackAction, startCallAction } from "@/app/widget/actions";
+import { ChatPanel } from "@/components/chat/ChatPanel";
+import { type FormState } from "@/lib/forms";
 import { useCallSession } from "@/app/widget/[publicKey]/useCallSession";
 import { weekdayLabels } from "@/lib/format";
 import type { CallCreateResult, FieldMode, PublicWidgetConfig } from "@/lib/types";
@@ -15,6 +17,8 @@ const inputClass =
 /** The caller-facing call experience rendered inside the widget iframe. */
 export function CallWidget({ config }: { config: PublicWidgetConfig }) {
   const [call, setCall] = useState<CallCreateResult | null>(null);
+  // What the caller typed, so the callback form after a missed call is prefilled.
+  const [typed, setTyped] = useState<Record<string, string>>({});
 
   return (
     <div className="flex min-h-screen flex-col bg-white">
@@ -24,26 +28,38 @@ export function CallWidget({ config }: { config: PublicWidgetConfig }) {
       </header>
       <main className="flex-1 px-5 py-5">
         {call ? (
-          <ActiveCall key={call.call_id} call={call} config={config} onRestart={() => setCall(null)} />
+          <ActiveCall key={call.call_id} call={call} config={config} typed={typed} onRestart={() => setCall(null)} />
         ) : config.availability === "closed" ? (
           <Closed config={config} />
         ) : config.availability === "unavailable" ? (
           <p className="text-sm text-slate-700">Calls to this team aren&apos;t available right now. Please try again later.</p>
         ) : config.availability === "no_agents" ? (
-          <NoAgents />
+          <NoAgents config={config} />
         ) : (
-          <StartForm config={config} onStarted={setCall} />
+          <StartForm
+            config={config}
+            onStarted={(started, values) => {
+              setTyped(values);
+              setCall(started);
+            }}
+          />
         )}
       </main>
     </div>
   );
 }
 
-function StartForm({ config, onStarted }: { config: PublicWidgetConfig; onStarted: (call: CallCreateResult) => void }) {
+function StartForm({
+  config,
+  onStarted,
+}: {
+  config: PublicWidgetConfig;
+  onStarted: (call: CallCreateResult, values: Record<string, string>) => void;
+}) {
   const [state, formAction] = useActionState(
     async (prev: StartCallState, formData: FormData) => {
       const next = await startCallAction(config.public_key, prev, formData);
-      if (next.call) onStarted(next.call);
+      if (next.call) onStarted(next.call, { name: String(formData.get("name") ?? ""), phone: String(formData.get("phone") ?? ""), email: String(formData.get("email") ?? "") });
       return next;
     },
     { status: "idle" } as StartCallState,
@@ -127,7 +143,17 @@ const endMessages: Record<string, string> = {
   expired: "This call session has expired.",
 };
 
-function ActiveCall({ call, config, onRestart }: { call: CallCreateResult; config: PublicWidgetConfig; onRestart: () => void }) {
+function ActiveCall({
+  call,
+  config,
+  typed,
+  onRestart,
+}: {
+  call: CallCreateResult;
+  config: PublicWidgetConfig;
+  typed: Record<string, string>;
+  onRestart: () => void;
+}) {
   const audioRef = useRef<HTMLDivElement>(null);
   const session = useCallSession(call, audioRef);
   const [hangingUp, setHangingUp] = useState(false);
@@ -150,7 +176,20 @@ function ActiveCall({ call, config, onRestart }: { call: CallCreateResult; confi
           color={config.accent_color}
         />
       ) : null}
-      {session.phase === "in_call" ? <Status title="Connected" detail="You're speaking with an agent." color={config.accent_color} /> : null}
+      {session.phase === "in_call" ? (
+        <>
+          <Status title="Connected" detail="You're speaking with an agent." color={config.accent_color} />
+          <p className="text-xs text-slate-500">This call is being recorded.</p>
+          <ChatPanel
+            messages={session.messages}
+            me="caller"
+            onSend={session.sendMessage}
+            sending={session.sendingMessage}
+            error={session.messageError}
+            accent={config.accent_color}
+          />
+        </>
+      ) : null}
       {session.phase === "error" ? <Notice tone="error">{session.error}</Notice> : null}
       {session.phase === "ended" ? (
         <Status title="Call ended" detail={endMessages[session.endReason ?? ""] ?? "Thank you for calling."} />
@@ -176,9 +215,19 @@ function ActiveCall({ call, config, onRestart }: { call: CallCreateResult; confi
           </button>
         </div>
       ) : (
-        <button type="button" onClick={onRestart} className="text-sm font-medium text-slate-700 underline">
-          Start a new call
-        </button>
+        <div className="space-y-4">
+          {session.endReason === "max_wait_exceeded" ? (
+            <CallbackForm
+              target={{ kind: "call", callId: call.call_id, callerToken: call.caller_token }}
+              config={config}
+              prefill={typed}
+              intro="Leave your details and we'll call you back."
+            />
+          ) : null}
+          <button type="button" onClick={onRestart} className="text-sm font-medium text-slate-700 underline">
+            Start a new call
+          </button>
+        </div>
       )}
     </div>
   );
@@ -196,15 +245,16 @@ function Status({ title, detail, pulse = false, color }: { title: string; detail
   );
 }
 
-function Notice({ tone, children }: { tone: "error"; children: React.ReactNode }) {
+function Notice({ tone, children }: { tone: "error" | "success"; children: React.ReactNode }) {
+  const style = tone === "error" ? "bg-red-50 text-red-800 ring-red-200" : "bg-green-50 text-green-800 ring-green-200";
   return (
-    <div role={tone === "error" ? "alert" : "status"} className="rounded-md bg-red-50 px-3 py-2 text-left text-sm text-red-800 ring-1 ring-red-200">
+    <div role={tone === "error" ? "alert" : "status"} className={`rounded-md px-3 py-2 text-left text-sm ring-1 ${style}`}>
       {children}
     </div>
   );
 }
 
-function NoAgents() {
+function NoAgents({ config }: { config: PublicWidgetConfig }) {
   const router = useRouter();
   const [checking, startChecking] = useTransition();
   return (
@@ -218,6 +268,7 @@ function NoAgents() {
       >
         {checking ? "Checking…" : "Check again"}
       </button>
+      <CallbackForm target={{ kind: "widget", publicKey: config.public_key }} config={config} intro="Or leave your details and we'll call you back." />
     </div>
   );
 }
@@ -239,6 +290,52 @@ function Closed({ config }: { config: PublicWidgetConfig }) {
         ))}
       </dl>
       <p className="text-xs text-slate-500">Times shown in {config.timezone.replaceAll("_", " ")}.</p>
+      <CallbackForm target={{ kind: "widget", publicKey: config.public_key }} config={config} intro="Leave your details and we'll call you back when we open." />
     </div>
+  );
+}
+
+/** Asks the caller to leave contact details when nobody could take their call. */
+function CallbackForm({
+  target,
+  config,
+  intro,
+  prefill = {},
+}: {
+  target: CallbackTarget;
+  config: PublicWidgetConfig;
+  intro: string;
+  prefill?: Record<string, string>;
+}) {
+  const [state, formAction, pending] = useActionState(
+    (prev: FormState, formData: FormData) => requestCallbackAction(target, prev, formData),
+    { status: "idle" } as FormState,
+  );
+  const e = state.fieldErrors ?? {};
+  const v = state.values ?? prefill;
+
+  if (state.status === "success") {
+    return (
+      <Notice tone="success">Thank you. We have your details and will call you back as soon as we can.</Notice>
+    );
+  }
+  return (
+    <form action={formAction} className="space-y-3 border-t border-slate-200 pt-4 text-left" noValidate>
+      <p className="text-sm font-medium text-slate-800">{intro}</p>
+      {state.status === "error" && state.message && Object.keys(e).length === 0 ? <Notice tone="error">{state.message}</Notice> : null}
+      <Field label="Your name" name="name" mode="required" autoComplete="name" defaultValue={v.name} error={e.name} />
+      <Field label="Phone number" name="phone" type="tel" mode="optional" autoComplete="tel" defaultValue={v.phone} error={e.phone} />
+      <Field label="Email" name="email" type="email" mode="optional" autoComplete="email" defaultValue={v.email} error={e.email} />
+      <Field label="What is it about?" name="reason" mode="optional" defaultValue={v.reason} error={e.reason} />
+      <p className="text-xs text-slate-500">We only use these details to return your call. Please give a phone number or an email.</p>
+      <button
+        type="submit"
+        disabled={pending}
+        className="w-full rounded-md px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+        style={{ backgroundColor: config.accent_color }}
+      >
+        {pending ? "Sending…" : "Request a callback"}
+      </button>
+    </form>
   );
 }

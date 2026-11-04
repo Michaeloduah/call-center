@@ -4,19 +4,25 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   acceptAction,
+  agentChatHistoryAction,
   declineAction,
   endCallAction,
   heartbeatAction,
   mediaAction,
+  sendAgentChatAction,
   sessionAction,
   setStatusAction,
 } from "@/app/agent/actions";
 import { useRingtone } from "@/app/agent/useRingtone";
+import Link from "next/link";
+
+import { ChatPanel } from "@/components/chat/ChatPanel";
 import { Alert } from "@/components/ui/Alert";
 import { AgentStateBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, DescriptionList } from "@/components/ui/Card";
 import { formatDuration } from "@/lib/format";
+import { useChat } from "@/lib/chat/useChat";
 import { type MediaCredentials, useLiveKitRoom } from "@/lib/media/useLiveKitRoom";
 import { useEventStream } from "@/lib/realtime/useEventStream";
 import type { AgentSession, AgentStatus } from "@/lib/types";
@@ -48,9 +54,14 @@ export function AgentConsole({ initial }: { initial: AgentSession }) {
   const credentials = grant && grant.callId === callId ? grant.credentials : null;
 
   const { unlock } = useRingtone(session.state === "ringing");
+  const chat = useChat(callId, session.state === "on_call", {
+    load: () => (callId ? agentChatHistoryAction(callId) : Promise.resolve({ ok: true as const, data: [] })),
+    send: (body) => sendAgentChatAction(callId ?? "", body),
+  });
   const { muted, toggleMute } = useLiveKitRoom({
     credentials,
     audioContainer: audioRef,
+    onData: chat.receive,
     onConnectFailed: () =>
       setMessage({
         tone: "error",
@@ -216,6 +227,9 @@ export function AgentConsole({ initial }: { initial: AgentSession }) {
               { label: "Email", value: call.caller_email ?? "—" },
             ]}
           />
+          <div className="mt-5">
+            <ChatPanel messages={chat.messages} me="agent" onSend={chat.send} sending={chat.sending} error={chat.error} />
+          </div>
           <div className="mt-5 flex gap-3">
             <Button type="button" variant="secondary" onClick={() => void toggleMute()} disabled={!credentials}>
               {muted ? "Unmute" : "Mute"}
@@ -225,6 +239,15 @@ export function AgentConsole({ initial }: { initial: AgentSession }) {
             </Button>
           </div>
         </Card>
+      ) : null}
+
+      {session.open_callbacks > 0 ? (
+        <Alert tone="info">
+          {session.open_callbacks === 1 ? "1 callback request is" : `${session.open_callbacks} callback requests are`} waiting.{" "}
+          <Link href="/callbacks" className="font-medium underline">
+            View callbacks
+          </Link>
+        </Alert>
       ) : null}
 
       {!offer && !call && state === "idle" ? (

@@ -40,6 +40,10 @@ const (
 	ActionWidgetCreated        = "widget.created"
 	ActionWidgetUpdated        = "widget.updated"
 	ActionWidgetDeleted        = "widget.deleted"
+	ActionRecordingPlayed      = "recording.played"
+	ActionRecordingDownloaded  = "recording.downloaded"
+	ActionRecordingDeleted     = "recording.deleted"
+	ActionRecordingRestored    = "recording.restored"
 )
 
 // Entry describes one action. TenantID is uuid.Nil for platform-level actions.

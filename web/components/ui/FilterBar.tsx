@@ -8,17 +8,19 @@ export function FilterBar({
   selects = [],
 }: {
   action: string;
-  search: { value: string; placeholder: string };
+  search?: { value: string; placeholder: string };
   selects?: { name: string; label: string; value: string; options: { value: string; label: string }[] }[];
 }) {
   return (
     <form action={action} method="get" className="mb-4 flex flex-wrap items-end gap-3" role="search">
-      <div className="min-w-56 flex-1">
-        <label htmlFor="q" className="sr-only">
-          Search
-        </label>
-        <input id="q" name="q" type="search" defaultValue={search.value} placeholder={search.placeholder} className={inputClass} />
-      </div>
+      {search ? (
+        <div className="min-w-56 flex-1">
+          <label htmlFor="q" className="sr-only">
+            Search
+          </label>
+          <input id="q" name="q" type="search" defaultValue={search.value} placeholder={search.placeholder} className={inputClass} />
+        </div>
+      ) : null}
       {selects.map((s) => (
         <div key={s.name}>
           <label htmlFor={s.name} className="sr-only">

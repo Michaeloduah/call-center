@@ -8,6 +8,9 @@ const actionErrors: Record<string, string> = {
   forbidden: "You cannot perform this action on your own account.",
   not_invited: "Only users who have not accepted their invitation can be re-invited.",
   not_found: "That item no longer exists.",
+  recording_unavailable: "This recording is not available.",
+  callback_taken: "Someone else already claimed this callback.",
+  callback_state: "This callback cannot be changed right now.",
   department_in_use:
     "This department has widgets or call history. Deactivate it instead, or move its widgets to another department first.",
 };

@@ -13,6 +13,8 @@ interface Options {
   credentials: MediaCredentials | null;
   /** Where the other side's audio elements are attached. */
   audioContainer: React.RefObject<HTMLDivElement | null>;
+  /** Data packets from the other side (the server pushes chat messages this way). */
+  onData?: (topic: string | undefined, payload: Uint8Array) => void;
   onConnected?: () => void;
   onConnectFailed?: () => void;
   /** The media connection dropped without us asking. */
@@ -23,13 +25,13 @@ interface Options {
  * Joins a call room with the microphone on and plays the other side's audio. Shared by the
  * caller's widget and the agent console; call state itself always comes from the API.
  */
-export function useLiveKitRoom({ credentials, audioContainer, onConnected, onConnectFailed, onLost }: Options) {
+export function useLiveKitRoom({ credentials, audioContainer, onData, onConnected, onConnectFailed, onLost }: Options) {
   const roomRef = useRef<Room | null>(null);
-  const handlers = useRef({ onConnected, onConnectFailed, onLost });
+  const handlers = useRef({ onData, onConnected, onConnectFailed, onLost });
   const [muted, setMuted] = useState(false);
 
   useEffect(() => {
-    handlers.current = { onConnected, onConnectFailed, onLost };
+    handlers.current = { onData, onConnected, onConnectFailed, onLost };
   });
 
   const url = credentials?.url;
@@ -45,6 +47,9 @@ export function useLiveKitRoom({ credentials, audioContainer, onConnected, onCon
     });
     room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
       track.detach().forEach((el) => el.remove());
+    });
+    room.on(RoomEvent.DataReceived, (payload, _participant, _kind, topic) => {
+      handlers.current.onData?.(topic, payload);
     });
     room.on(RoomEvent.Disconnected, () => {
       if (!leaving) handlers.current.onLost?.();

@@ -217,3 +217,54 @@ func (f *Fixture) OfferedAgent(callID uuid.UUID) uuid.UUID {
 	}
 	return *id
 }
+
+// PlatformAdmin creates a platform administrator (no tenant) and removes it when the test ends.
+func (f *Fixture) PlatformAdmin() uuid.UUID {
+	f.T.Helper()
+	var id uuid.UUID
+	f.InPlatform(func(q database.Querier) {
+		name := "platform-" + uuid.NewString()[:6]
+		if err := q.QueryRow(f.Ctx, `
+			INSERT INTO users (email, password_hash, full_name, role, status)
+			VALUES ($1, 'x', $2, 'platform_admin', 'active') RETURNING id`, name+"@example.test", name).Scan(&id); err != nil {
+			f.T.Fatalf("create platform admin: %v", err)
+		}
+	})
+	f.T.Cleanup(func() {
+		_ = f.DB.InPlatform(context.Background(), func(ctx context.Context) error {
+			q, _ := database.Conn(ctx)
+			_, err := q.Exec(ctx, `DELETE FROM users WHERE id = $1`, id)
+			return err
+		})
+	})
+	return id
+}
+
+// ActiveCall creates a call that an agent is on right now.
+func (f *Fixture) ActiveCall(tenantID, departmentID, agentID uuid.UUID) uuid.UUID {
+	f.T.Helper()
+	id := f.Call(tenantID, departmentID, time.Minute)
+	f.Exec(`UPDATE calls SET status = 'active', assigned_agent_id = $2, answered_at = now() WHERE id = $1`, id, agentID)
+	return id
+}
+
+// EndedCall creates a call an agent handled that finished minutesAgo minutes ago after talking for
+// five minutes.
+func (f *Fixture) EndedCall(tenantID, departmentID, agentID uuid.UUID, minutesAgo int) uuid.UUID {
+	f.T.Helper()
+	id := f.Call(tenantID, departmentID, time.Duration(minutesAgo+6)*time.Minute)
+	f.Exec(`
+		UPDATE calls SET status = 'completed', assigned_agent_id = $2,
+		    answered_at = now() - make_interval(mins => $3 + 5), ended_at = now() - make_interval(mins => $3),
+		    end_reason = 'agent_ended'
+		WHERE id = $1`, id, agentID, minutesAgo)
+	return id
+}
+
+// MissedCall creates a call nobody answered.
+func (f *Fixture) MissedCall(tenantID, departmentID uuid.UUID) uuid.UUID {
+	f.T.Helper()
+	id := f.Call(tenantID, departmentID, 10*time.Minute)
+	f.Exec(`UPDATE calls SET status = 'missed', ended_at = now(), end_reason = 'max_wait_exceeded' WHERE id = $1`, id)
+	return id
+}

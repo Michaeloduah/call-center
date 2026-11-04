@@ -9,10 +9,15 @@ import (
 	"callcenter/internal/auth"
 	"callcenter/internal/board"
 	"callcenter/internal/call"
+	"callcenter/internal/callback"
+	"callcenter/internal/chat"
 	"callcenter/internal/department"
+	"callcenter/internal/history"
+	"callcenter/internal/media"
 	"callcenter/internal/platform/httpx"
 	"callcenter/internal/platform/reqctx"
 	"callcenter/internal/presence"
+	"callcenter/internal/recording"
 	"callcenter/internal/routing"
 	"callcenter/internal/settings"
 	"callcenter/internal/tenant"
@@ -100,7 +105,7 @@ func (a *App) Handler() http.Handler {
 	mux.Handle("DELETE /v1/admin/widgets/{id}", tenantAdmin(wh.Delete))
 
 	// Public caller endpoints (no user session; calls are authorised by their caller token).
-	ch := call.NewHandler(a.Calls, a.Media, a.CallLimits, a.Logger)
+	ch := call.NewHandler(a.Calls, media.Listeners{a.Calls, a.Recordings}, a.Media, a.CallLimits, a.Logger)
 	mux.HandleFunc("GET /v1/public/widgets/{key}", wh.Public)
 	mux.HandleFunc("POST /v1/public/widgets/{key}/calls", ch.Create)
 	mux.HandleFunc("GET /v1/public/calls/{id}", ch.Status)
@@ -118,6 +123,38 @@ func (a *App) Handler() http.Handler {
 	mux.Handle("POST /v1/agent/offers/{id}/decline", tenantUser(rh.Decline))
 	mux.Handle("GET /v1/agent/calls/{id}/media", tenantUser(rh.Media))
 	mux.Handle("POST /v1/agent/calls/{id}/end", tenantUser(ch.AgentEnd))
+
+	// Chat
+	chh := chat.NewHandler(a.Chat)
+	mux.HandleFunc("POST /v1/public/calls/{id}/messages", chh.CallerSend)
+	mux.HandleFunc("GET /v1/public/calls/{id}/messages", chh.CallerList)
+	mux.Handle("POST /v1/agent/calls/{id}/messages", tenantUser(chh.AgentSend))
+	mux.Handle("GET /v1/agent/calls/{id}/messages", tenantUser(chh.AgentList))
+
+	// Callbacks
+	cbh := callback.NewHandler(a.Callbacks, a.CallbackLimits)
+	mux.HandleFunc("POST /v1/public/widgets/{key}/callbacks", cbh.CreateForWidget)
+	mux.HandleFunc("POST /v1/public/calls/{id}/callback", cbh.CreateForCall)
+	mux.Handle("GET /v1/callbacks", tenantUser(cbh.List))
+	mux.Handle("GET /v1/callbacks/{id}", tenantUser(cbh.Get))
+	mux.Handle("POST /v1/callbacks/{id}/claim", tenantUser(cbh.Claim))
+	mux.Handle("POST /v1/callbacks/{id}/release", tenantUser(cbh.Release))
+	mux.Handle("POST /v1/callbacks/{id}/complete", tenantUser(cbh.Complete))
+	mux.Handle("POST /v1/callbacks/{id}/cancel", tenantUser(cbh.Cancel))
+	mux.Handle("POST /v1/admin/callbacks/{id}/assign", tenantAdmin(cbh.Assign))
+
+	// Call history
+	hh := history.NewHandler(a.History)
+	mux.Handle("GET /v1/calls", tenantUser(hh.List))
+	mux.Handle("GET /v1/calls/{id}", tenantUser(hh.Get))
+
+	// Recordings
+	rech := recording.NewHandler(a.Recordings)
+	mux.Handle("POST /v1/calls/{id}/recording/access", supervisor(rech.Access))
+	mux.Handle("DELETE /v1/calls/{id}/recording", tenantAdmin(rech.Delete))
+	mux.Handle("GET /v1/platform/recordings/deleted", platformOnly(rech.ListDeleted))
+	mux.Handle("POST /v1/platform/recordings/{id}/access", platformOnly(rech.PlatformAccess))
+	mux.Handle("POST /v1/platform/recordings/{id}/restore", platformOnly(rech.Restore))
 
 	// Supervisor live board
 	bh := board.NewHandler(a.Board, a.Hub)

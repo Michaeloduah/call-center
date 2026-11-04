@@ -42,10 +42,11 @@ type Repository interface {
 
 // Snapshot is the raw state behind a Session.
 type Snapshot struct {
-	Status presence.Status
-	Fresh  bool
-	Offer  *OfferView
-	Call   *ActiveCallView
+	Status        presence.Status
+	Fresh         bool
+	Offer         *OfferView
+	Call          *ActiveCallView
+	OpenCallbacks int
 }
 
 type pgRepository struct{}
@@ -377,6 +378,13 @@ func (r pgRepository) Snapshot(ctx context.Context, agentID uuid.UUID) (*Snapsho
 
 	if s.Call, err = r.ActiveCall(ctx, agentID); err != nil {
 		return nil, err
+	}
+	if err := q.QueryRow(ctx, `
+		SELECT count(*)::int FROM callback_requests cb
+		WHERE cb.status = 'open'
+		  AND EXISTS (SELECT 1 FROM department_members m WHERE m.department_id = cb.department_id AND m.user_id = $1)`,
+		agentID).Scan(&s.OpenCallbacks); err != nil {
+		return nil, fmt.Errorf("snapshot callbacks: %w", err)
 	}
 	return &s, nil
 }

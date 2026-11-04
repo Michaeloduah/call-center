@@ -6,7 +6,14 @@ rtc:
   # A single multiplexed UDP port keeps Docker port mapping simple on macOS/Windows.
   udp_port: 7882
   use_external_ip: false
-  node_ip: 127.0.0.1
+  # Advertise loopback (browsers and CLIs reach the published port on localhost) and the Docker
+  # bridge (the recorder runs in this container's network namespace and cannot ICE to loopback).
+  ips:
+    includes:
+      - 127.0.0.0/8
+      - 172.16.0.0/12
+redis:
+  address: redis:6379
 keys:
   devkey: devsecret-devsecret-devsecret-devsecret
 room:

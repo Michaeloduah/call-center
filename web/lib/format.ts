@@ -1,4 +1,4 @@
-import type { AgentState, Role, TenantStatus, UserStatus } from "@/lib/types";
+import type { AgentState, CallStatus, CallbackStatus, RecordingStatus, Role, TenantStatus, UserStatus } from "@/lib/types";
 
 export const roleLabels: Record<Role, string> = {
   platform_admin: "Platform admin",
@@ -57,4 +57,45 @@ export const agentStateLabels: Record<AgentState, string> = {
   idle: "Available",
   ringing: "Ringing",
   on_call: "On a call",
+};
+
+export function formatBytes(bytes: number | null): string {
+  if (bytes === null) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export const callStatusLabels: Record<CallStatus, string> = {
+  queued: "Waiting",
+  ringing: "Ringing",
+  active: "In progress",
+  completed: "Completed",
+  abandoned: "Caller left",
+  missed: "Missed",
+  failed: "Failed",
+};
+
+export const endReasonLabels: Record<string, string> = {
+  caller_hung_up: "Caller hung up",
+  caller_left: "Caller left",
+  agent_ended: "Agent ended the call",
+  agent_left: "Agent disconnected",
+  max_wait_exceeded: "Nobody answered in time",
+  room_closed: "Room closed",
+  media_unavailable: "Could not connect audio",
+};
+
+export const callbackStatusLabels: Record<CallbackStatus, string> = {
+  open: "Open",
+  claimed: "Claimed",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
+export const recordingStatusLabels: Record<RecordingStatus, string> = {
+  starting: "Starting",
+  recording: "Recording",
+  ready: "Available",
+  failed: "Unavailable",
 };

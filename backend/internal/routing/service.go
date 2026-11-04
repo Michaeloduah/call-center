@@ -19,10 +19,11 @@ type Service struct {
 	members    presence.Repository
 	media      media.Provider
 	dispatcher presence.Dispatcher
+	recorder   Recorder
 }
 
-func NewService(tx database.TxManager, repo Repository, members presence.Repository, mp media.Provider, dispatcher presence.Dispatcher) *Service {
-	return &Service{tx: tx, repo: repo, members: members, media: mp, dispatcher: dispatcher}
+func NewService(tx database.TxManager, repo Repository, members presence.Repository, mp media.Provider, dispatcher presence.Dispatcher, recorder Recorder) *Service {
+	return &Service{tx: tx, repo: repo, members: members, media: mp, dispatcher: dispatcher, recorder: recorder}
 }
 
 // Session returns the signed-in agent's current state.
@@ -45,6 +46,7 @@ func (s *Service) Session(ctx context.Context) (*Session, error) {
 			State:                    presence.Effective(snap.Status, snap.Fresh, snap.Offer != nil, snap.Call != nil),
 			Offer:                    snap.Offer,
 			Call:                     snap.Call,
+			OpenCallbacks:            snap.OpenCallbacks,
 			HeartbeatIntervalSeconds: int(presence.HeartbeatInterval.Seconds()),
 		}
 		return nil
@@ -91,6 +93,9 @@ func (s *Service) Accept(ctx context.Context, offerID uuid.UUID) (*AcceptResult,
 		return nil, err
 	}
 	result.MediaURL, result.MediaToken = grant.MediaURL, grant.MediaToken
+	// Recording starts now, not when the agent's audio connects, so the recorder is ready
+	// as early as possible. It runs in the background and cannot fail the accept.
+	s.recorder.Start(p.TenantID, result.Call.ID, room)
 	return &result, nil
 }
 

@@ -1,5 +1,12 @@
-import { agentStateLabels, tenantStatusLabels, userStatusLabels } from "@/lib/format";
-import type { AgentState, TenantStatus, UserStatus } from "@/lib/types";
+import {
+  agentStateLabels,
+  callStatusLabels,
+  callbackStatusLabels,
+  recordingStatusLabels,
+  tenantStatusLabels,
+  userStatusLabels,
+} from "@/lib/format";
+import type { AgentState, CallStatus, CallbackStatus, RecordingStatus, TenantStatus, UserStatus } from "@/lib/types";
 
 const tones = {
   green: "bg-green-50 text-green-700 ring-green-600/20",
@@ -38,4 +45,30 @@ const agentTone: Record<AgentState, keyof typeof tones> = {
 
 export function AgentStateBadge({ state }: { state: AgentState }) {
   return <Badge tone={agentTone[state]}>{agentStateLabels[state]}</Badge>;
+}
+
+const callTone: Record<CallStatus, keyof typeof tones> = {
+  queued: "amber",
+  ringing: "amber",
+  active: "indigo",
+  completed: "green",
+  abandoned: "slate",
+  missed: "red",
+  failed: "red",
+};
+
+export function CallStatusBadge({ status }: { status: CallStatus }) {
+  return <Badge tone={callTone[status]}>{callStatusLabels[status]}</Badge>;
+}
+
+const callbackTone: Record<CallbackStatus, keyof typeof tones> = { open: "amber", claimed: "indigo", completed: "green", cancelled: "slate" };
+
+export function CallbackStatusBadge({ status }: { status: CallbackStatus }) {
+  return <Badge tone={callbackTone[status]}>{callbackStatusLabels[status]}</Badge>;
+}
+
+const recordingTone: Record<RecordingStatus, keyof typeof tones> = { starting: "amber", recording: "amber", ready: "green", failed: "red" };
+
+export function RecordingStatusBadge({ status }: { status: RecordingStatus }) {
+  return <Badge tone={recordingTone[status]}>{recordingStatusLabels[status]}</Badge>;
 }

@@ -3,6 +3,7 @@ package validate
 
 import (
 	"net/mail"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -87,3 +88,27 @@ func (e Errors) IntRange(field string, v, min, max int) {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+var (
+	phoneChars  = regexp.MustCompile(`^\+?[0-9 ()\-.]{6,32}$`)
+	phoneDigits = regexp.MustCompile(`[0-9]`)
+)
+
+const minPhoneDigits = 6
+
+// OptionalPhone trims s and checks it looks like a phone number. Empty is allowed.
+func (e Errors) OptionalPhone(field, s string) string {
+	s = strings.TrimSpace(s)
+	if s != "" && (!phoneChars.MatchString(s) || len(phoneDigits.FindAllString(s, -1)) < minPhoneDigits) {
+		e.Add(field, "Enter a valid phone number.")
+	}
+	return s
+}
+
+// OptionalEmail normalises and validates s when it is not empty.
+func (e Errors) OptionalEmail(field, s string) string {
+	if strings.TrimSpace(s) == "" {
+		return ""
+	}
+	return e.Email(field, s)
+}

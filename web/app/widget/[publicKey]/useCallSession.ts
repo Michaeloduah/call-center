@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { callStatusAction, hangUpAction } from "@/app/widget/actions";
+import { callStatusAction, chatHistoryAction, hangUpAction, sendChatAction } from "@/app/widget/actions";
+import { useChat } from "@/lib/chat/useChat";
 import { type MediaCredentials, useLiveKitRoom } from "@/lib/media/useLiveKitRoom";
-import type { CallCreateResult, CallStatus } from "@/lib/types";
+import type { CallCreateResult, CallStatus, ChatMessage } from "@/lib/types";
 
 const STATUS_POLL_MS = 3000;
 const ENDED: CallStatus[] = ["completed", "abandoned", "missed", "failed"];
@@ -19,6 +20,10 @@ export interface CallSession {
   endReason: string | null;
   muted: boolean;
   error: string | null;
+  messages: ChatMessage[];
+  sendMessage: (body: string) => Promise<boolean>;
+  sendingMessage: boolean;
+  messageError: string | null;
   hangUp: () => Promise<void>;
   toggleMute: () => Promise<void>;
 }
@@ -45,9 +50,16 @@ export function useCallSession(call: CallCreateResult, audioContainer: React.Ref
     setCredentials(null); // leaves the media room
   }, []);
 
+  // Chat is only open while an agent is on the call (D24).
+  const chat = useChat(call.call_id, phase === "in_call", {
+    load: () => chatHistoryAction(call.call_id, call.caller_token),
+    send: (body) => sendChatAction(call.call_id, call.caller_token, body),
+  });
+
   const { muted, toggleMute } = useLiveKitRoom({
     credentials,
     audioContainer,
+    onData: chat.receive,
     onConnected: () => setPhase((p) => (p === "connecting" ? "waiting" : p)),
     onConnectFailed: () => {
       endedRef.current = true;
@@ -92,5 +104,9 @@ export function useCallSession(call: CallCreateResult, audioContainer: React.Ref
     finish("caller_hung_up");
   }, [call, finish]);
 
-  return { phase, queuePosition, agentRinging, endReason, muted, error, hangUp, toggleMute };
+  return {
+    phase, queuePosition, agentRinging, endReason, muted, error,
+    messages: chat.messages, sendMessage: chat.send, sendingMessage: chat.sending, messageError: chat.error,
+    hangUp, toggleMute,
+  };
 }

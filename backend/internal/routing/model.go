@@ -63,11 +63,13 @@ type ActiveCallView struct {
 
 // Session is everything an agent console needs to draw itself.
 type Session struct {
-	Status                   presence.Status `json:"status"`
-	State                    presence.State  `json:"state"`
-	Offer                    *OfferView      `json:"offer"`
-	Call                     *ActiveCallView `json:"call"`
-	HeartbeatIntervalSeconds int             `json:"heartbeat_interval_seconds"`
+	Status presence.Status `json:"status"`
+	State  presence.State  `json:"state"`
+	Offer  *OfferView      `json:"offer"`
+	Call   *ActiveCallView `json:"call"`
+	// OpenCallbacks counts callback requests waiting in the agent's departments.
+	OpenCallbacks            int `json:"open_callbacks"`
+	HeartbeatIntervalSeconds int `json:"heartbeat_interval_seconds"`
 }
 
 // AcceptResult is returned when an agent takes a call.
@@ -81,6 +83,11 @@ type AcceptResult struct {
 type MediaGrant struct {
 	MediaURL   string `json:"media_url"`
 	MediaToken string `json:"media_token"`
+}
+
+// Recorder records a call that has just been answered. Start must return immediately.
+type Recorder interface {
+	Start(tenantID, callID uuid.UUID, room string)
 }
 
 var (
