@@ -1,4 +1,4 @@
-import type { Role, TenantStatus, UserStatus } from "@/lib/types";
+import type { AgentState, Role, TenantStatus, UserStatus } from "@/lib/types";
 
 export const roleLabels: Record<Role, string> = {
   platform_admin: "Platform admin",
@@ -41,3 +41,20 @@ export function pageParam(value: string | string[] | undefined): number {
   const n = Number.parseInt(param(value), 10);
   return Number.isFinite(n) && n > 0 ? n : 1;
 }
+
+/** 75 → "1:15", 3725 → "1:02:05". Negative values count as zero. */
+export function formatDuration(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = String(s % 60).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+}
+
+export const agentStateLabels: Record<AgentState, string> = {
+  offline: "Offline",
+  away: "Away",
+  idle: "Available",
+  ringing: "Ringing",
+  on_call: "On a call",
+};

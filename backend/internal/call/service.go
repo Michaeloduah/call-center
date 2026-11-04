@@ -27,12 +27,13 @@ type Service struct {
 	repo    Repository
 	widgets WidgetResolver
 	media   media.Provider
+	router  Router
 	logger  *slog.Logger
 	now     func() time.Time
 }
 
-func NewService(tx database.TxManager, repo Repository, widgets WidgetResolver, mp media.Provider, logger *slog.Logger) *Service {
-	return &Service{tx: tx, repo: repo, widgets: widgets, media: mp, logger: logger, now: time.Now}
+func NewService(tx database.TxManager, repo Repository, widgets WidgetResolver, mp media.Provider, router Router, logger *slog.Logger) *Service {
+	return &Service{tx: tx, repo: repo, widgets: widgets, media: mp, router: router, logger: logger, now: time.Now}
 }
 
 // Create queues a new call from a widget and returns the caller's credentials for the call room.
@@ -48,6 +49,7 @@ func (s *Service) Create(ctx context.Context, publicKey string, in CreateInput) 
 	expiresAt := s.now().Add(callerTokenTTL)
 	room := "call-" + id.String()
 
+	var tenantID uuid.UUID
 	err = s.tx.InPlatform(ctx, func(ctx context.Context) error {
 		w, err := s.widgets.Resolve(ctx, publicKey)
 		if err != nil {
@@ -63,10 +65,13 @@ func (s *Service) Create(ctx context.Context, publicKey string, in CreateInput) 
 			return errClosed
 		case availability == widget.AvailabilityUnavailable:
 			return errUnavailable
+		case availability == widget.AvailabilityNoAgents:
+			return errNoAgents
 		}
 		if err := in.ApplyForm(w.CallerForm); err != nil {
 			return err
 		}
+		tenantID = w.TenantID
 		if err := s.repo.LockTenant(ctx, w.TenantID); err != nil {
 			return err
 		}
@@ -109,6 +114,7 @@ func (s *Service) Create(ctx context.Context, publicKey string, in CreateInput) 
 		s.fail(ctx, id, err)
 		return nil, err
 	}
+	s.router.Trigger(tenantID)
 	return &CreateResult{
 		CallID: id, CallerToken: rawToken, ExpiresAt: expiresAt, Status: StatusQueued,
 		MediaURL: s.media.PublicURL(), MediaToken: mediaToken,
@@ -146,20 +152,27 @@ func (s *Service) Status(ctx context.Context, id uuid.UUID, callerToken string) 
 
 // HangUp ends the caller's call and closes its room. Ending an already-ended call is a no-op.
 func (s *Service) HangUp(ctx context.Context, id uuid.UUID, callerToken string) error {
-	var room string
-	err := s.tx.InPlatform(ctx, func(ctx context.Context) error {
+	return s.finish(ctx, func(ctx context.Context) (*EndedCall, error) {
 		if _, err := s.authenticate(ctx, id, callerToken); err != nil {
-			return err
+			return nil, err
 		}
-		var err error
-		room, err = s.repo.End(ctx, id, EndCallerHungUp)
-		return err
+		return s.repo.End(ctx, id, EndCallerHungUp)
 	})
-	if err != nil || room == "" {
+}
+
+// AgentEnd lets the assigned agent end their active call.
+func (s *Service) AgentEnd(ctx context.Context, id uuid.UUID) error {
+	p, err := reqctx.TenantPrincipal(ctx)
+	if err != nil {
 		return err
 	}
-	s.closeRoom(ctx, room)
-	return nil
+	return s.finish(ctx, func(ctx context.Context) (*EndedCall, error) {
+		ended, err := s.repo.EndAssigned(ctx, id, p.UserID, EndAgentEnded)
+		if err == nil && ended == nil {
+			return nil, errCallNotFound
+		}
+		return ended, err
+	}, p.TenantID)
 }
 
 // HandleMediaEvent reacts to verified media-server webhooks. Handling is idempotent because
@@ -167,32 +180,53 @@ func (s *Service) HangUp(ctx context.Context, id uuid.UUID, callerToken string) 
 func (s *Service) HandleMediaEvent(ctx context.Context, ev media.Event) error {
 	switch ev.Kind {
 	case media.EventParticipantLeft:
-		rawID, ok := strings.CutPrefix(ev.ParticipantIdentity, callerIdentityPrefix)
-		if !ok {
-			return nil // agents leaving are handled in M3
+		if rawID, ok := strings.CutPrefix(ev.ParticipantIdentity, callerIdentityPrefix); ok {
+			id, err := uuid.Parse(rawID)
+			if err != nil {
+				return fmt.Errorf("media event: malformed caller identity %q", ev.ParticipantIdentity)
+			}
+			return s.finish(ctx, func(ctx context.Context) (*EndedCall, error) {
+				return s.repo.End(ctx, id, EndCallerLeft)
+			})
 		}
-		id, err := uuid.Parse(rawID)
-		if err != nil {
-			return fmt.Errorf("media event: malformed caller identity %q", ev.ParticipantIdentity)
-		}
-		var room string
-		if err := s.tx.InPlatform(ctx, func(ctx context.Context) (err error) {
-			room, err = s.repo.End(ctx, id, EndCallerLeft)
-			return err
-		}); err != nil {
-			return err
-		}
-		if room != "" {
-			s.closeRoom(ctx, room)
+		if strings.HasPrefix(ev.ParticipantIdentity, AgentIdentityPrefix) {
+			return s.finish(ctx, func(ctx context.Context) (*EndedCall, error) {
+				return s.repo.EndByRoom(ctx, ev.Room, EndAgentLeft)
+			})
 		}
 		return nil
 	case media.EventRoomFinished:
-		return s.tx.InPlatform(ctx, func(ctx context.Context) error {
+		return s.finish(ctx, func(ctx context.Context) (*EndedCall, error) {
 			return s.repo.EndByRoom(ctx, ev.Room, EndRoomClosed)
 		})
 	default:
 		return nil
 	}
+}
+
+// finish ends a call in one transaction (the router frees the agent and cancels offers inside
+// it), then closes the media room and lets routing look for the next piece of work. When the
+// caller is a signed-in agent their tenant scopes the transaction; otherwise it is a platform one.
+func (s *Service) finish(ctx context.Context, end func(ctx context.Context) (*EndedCall, error), tenant ...uuid.UUID) error {
+	var ended *EndedCall
+	run := func(ctx context.Context) (err error) {
+		if ended, err = end(ctx); err != nil || ended == nil {
+			return err
+		}
+		return s.router.CallEnded(ctx, *ended)
+	}
+	var err error
+	if len(tenant) > 0 {
+		err = s.tx.InTenant(ctx, tenant[0], run)
+	} else {
+		err = s.tx.InPlatform(ctx, run)
+	}
+	if err != nil || ended == nil {
+		return err
+	}
+	s.closeRoom(ctx, ended.RoomName)
+	s.router.Trigger(ended.TenantID)
+	return nil
 }
 
 func (s *Service) authenticate(ctx context.Context, id uuid.UUID, callerToken string) (*CallerView, error) {

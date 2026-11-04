@@ -66,6 +66,7 @@ const (
 	AvailabilityOpen        Availability = "open"
 	AvailabilityClosed      Availability = "closed"      // outside business hours
 	AvailabilityUnavailable Availability = "unavailable" // department deactivated
+	AvailabilityNoAgents    Availability = "no_agents"   // open, but no agent is online to take a call
 )
 
 // Resolved is everything the public side needs about a widget, loaded in one query.
@@ -77,15 +78,18 @@ type Resolved struct {
 	DepartmentID     uuid.UUID
 	DepartmentName   string
 	DepartmentActive bool
-	Timezone         string
-	Hours            []department.HoursRange
-	PublicKey        string
-	AllowedOrigins   []string
-	ButtonLabel      string
-	AccentColor      string
-	Greeting         string
-	CallerForm       CallerForm
-	ConsentText      string // tenant override, else platform default
+	// AgentsAvailable is true when at least one department member is available with a live heartbeat.
+	// Agents currently on a call still count: the caller waits in the queue for them.
+	AgentsAvailable bool
+	Timezone        string
+	Hours           []department.HoursRange
+	PublicKey       string
+	AllowedOrigins  []string
+	ButtonLabel     string
+	AccentColor     string
+	Greeting        string
+	CallerForm      CallerForm
+	ConsentText     string // tenant override, else platform default
 }
 
 // PublicConfig is the caller-facing widget configuration. It contains nothing secret.

@@ -151,10 +151,14 @@ func AvailabilityOf(r *Resolved, now time.Time) (Availability, error) {
 	if err != nil {
 		return "", err
 	}
-	if !open {
+	switch {
+	case !open:
 		return AvailabilityClosed, nil
+	case !r.AgentsAvailable:
+		return AvailabilityNoAgents, nil
+	default:
+		return AvailabilityOpen, nil
 	}
-	return AvailabilityOpen, nil
 }
 
 func (s *Service) inTenant(ctx context.Context, fn func(ctx context.Context, tenantID uuid.UUID) error) error {

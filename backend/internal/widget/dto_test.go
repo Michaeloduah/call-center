@@ -2,7 +2,9 @@ package widget
 
 import (
 	"testing"
+	"time"
 
+	"callcenter/internal/department"
 	"callcenter/internal/platform/validate"
 )
 
@@ -46,5 +48,36 @@ func TestValidateOriginsDeduplicatesAndRequiresOne(t *testing.T) {
 	validateOrigins(v, []string{" "})
 	if v["allowed_origins"] == "" {
 		t.Fatal("empty origin list accepted")
+	}
+}
+
+func TestAvailabilityOf(t *testing.T) {
+	allWeek := make([]department.HoursRange, 0, 7)
+	for d := 0; d < 7; d++ {
+		allWeek = append(allWeek, department.HoursRange{Weekday: d, Opens: "00:00", Closes: "24:00"})
+	}
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	base := Resolved{DepartmentActive: true, Timezone: "UTC", Hours: allWeek, AgentsAvailable: true}
+
+	tests := []struct {
+		name   string
+		mutate func(*Resolved)
+		want   Availability
+	}{
+		{"open", func(*Resolved) {}, AvailabilityOpen},
+		{"department deactivated", func(r *Resolved) { r.DepartmentActive = false }, AvailabilityUnavailable},
+		{"outside business hours", func(r *Resolved) { r.Hours = nil }, AvailabilityClosed},
+		{"open but nobody online", func(r *Resolved) { r.AgentsAvailable = false }, AvailabilityNoAgents},
+		{"closed wins over nobody online", func(r *Resolved) { r.Hours = nil; r.AgentsAvailable = false }, AvailabilityClosed},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := base
+			tt.mutate(&r)
+			got, err := AvailabilityOf(&r, now)
+			if err != nil || got != tt.want {
+				t.Fatalf("AvailabilityOf = %q, %v; want %q", got, err, tt.want)
+			}
+		})
 	}
 }

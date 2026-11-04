@@ -48,6 +48,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	a.RunBackground(ctx)
 	go sweepRateLimiters(ctx, a)
 
 	srv := &http.Server{

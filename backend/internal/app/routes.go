@@ -7,10 +7,13 @@ import (
 
 	"callcenter/internal/audit"
 	"callcenter/internal/auth"
+	"callcenter/internal/board"
 	"callcenter/internal/call"
 	"callcenter/internal/department"
 	"callcenter/internal/platform/httpx"
 	"callcenter/internal/platform/reqctx"
+	"callcenter/internal/presence"
+	"callcenter/internal/routing"
 	"callcenter/internal/settings"
 	"callcenter/internal/tenant"
 	"callcenter/internal/user"
@@ -28,6 +31,12 @@ func (a *App) Handler() http.Handler {
 	}
 	platformOnly := func(h http.HandlerFunc) http.Handler { return guard(h, reqctx.RolePlatformAdmin) }
 	tenantAdmin := func(h http.HandlerFunc) http.Handler { return guard(h, reqctx.RoleTenantAdmin) }
+	// Every tenant role can be an agent (membership in a department decides), so these only
+	// require a tenant user; the services check the membership and scope.
+	tenantUser := func(h http.HandlerFunc) http.Handler {
+		return guard(h, reqctx.RoleTenantAdmin, reqctx.RoleSupervisor, reqctx.RoleAgent)
+	}
+	supervisor := func(h http.HandlerFunc) http.Handler { return guard(h, reqctx.RoleTenantAdmin, reqctx.RoleSupervisor) }
 	anyUser := func(h http.HandlerFunc) http.Handler {
 		return guard(h, reqctx.RolePlatformAdmin, reqctx.RoleTenantAdmin, reqctx.RoleSupervisor, reqctx.RoleAgent)
 	}
@@ -97,6 +106,23 @@ func (a *App) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/public/calls/{id}", ch.Status)
 	mux.HandleFunc("POST /v1/public/calls/{id}/hangup", ch.HangUp)
 	mux.HandleFunc("POST /v1/webhooks/livekit", ch.MediaWebhook)
+
+	// Agent console
+	ph := presence.NewHandler(a.Presence)
+	rh := routing.NewHandler(a.Routing, a.Hub)
+	mux.Handle("GET /v1/agent/session", tenantUser(rh.Session))
+	mux.Handle("GET /v1/agent/events", tenantUser(rh.Events))
+	mux.Handle("PUT /v1/agent/presence", tenantUser(ph.SetStatus))
+	mux.Handle("POST /v1/agent/presence/heartbeat", tenantUser(ph.Heartbeat))
+	mux.Handle("POST /v1/agent/offers/{id}/accept", tenantUser(rh.Accept))
+	mux.Handle("POST /v1/agent/offers/{id}/decline", tenantUser(rh.Decline))
+	mux.Handle("GET /v1/agent/calls/{id}/media", tenantUser(rh.Media))
+	mux.Handle("POST /v1/agent/calls/{id}/end", tenantUser(ch.AgentEnd))
+
+	// Supervisor live board
+	bh := board.NewHandler(a.Board, a.Hub)
+	mux.Handle("GET /v1/live/board", supervisor(bh.Board))
+	mux.Handle("GET /v1/live/events", supervisor(bh.Events))
 
 	mux.Handle("GET /v1/admin/settings", tenantAdmin(sh.GetTenant))
 	mux.Handle("PUT /v1/admin/settings", tenantAdmin(sh.UpdateTenant))

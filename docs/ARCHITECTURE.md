@@ -1,6 +1,6 @@
-# CallCenter — Architecture & Data Model (v0.4)
+# CallCenter — Architecture & Data Model (v0.5)
 
-Status: **M1 (foundation) and M2 (widgets & caller side) implemented**; M3–M6 not started. Each item is labelled **Decision** (you confirmed it),
+Status: **M1 (foundation), M2 (widgets & caller side) and M3 (routing & consoles) implemented**; M4–M6 not started. Details of M3 and why it differs from v0.4 are in [M3-DESIGN.md](M3-DESIGN.md). Each item is labelled **Decision** (you confirmed it),
 **Proposal** (my recommendation, needs your OK), **Assumption** (I am guessing, please correct me) or **Open question**.
 
 ---
@@ -45,6 +45,9 @@ over voice calls that run on the internet (WebRTC) instead of the phone network,
 | D22 | Supervisors see **only their assigned departments**: live board and call history. |
 | D23 | Departments have **business hours** (weekly schedule + timezone). Outside hours the widget shows the callback form immediately. |
 | D24 | Chat is available **only once an agent has joined** (call `active`). |
+| D25 | Server → browser real-time events use **Server-Sent Events** through a Next.js route handler (the browser still talks only to Next.js), not WebSockets. Events are hints; clients re-read state. |
+| D26 | Event fan-out uses Postgres **LISTEN/NOTIFY** (sent inside the transaction, delivered on commit), so **Redis is not required** until LiveKit or hosting needs it. |
+| D27 | An agent's `busy`/`ringing` state is **derived** from calls and offers, never stored. The database enforces one pending offer and one active call per agent. |
 
 ---
 
@@ -59,7 +62,7 @@ flowchart LR
     WEB[Next.js web<br/>platform / admin / supervisor / agent]
     API[Go API<br/>REST + WebSocket]
     PG[(PostgreSQL)]
-    RD[(Redis)]
+    RD[(Redis<br/>not used yet)]
     LK[LiveKit server<br/>SFU + TURN]
     EG[LiveKit Egress]
     S3[(MinIO / S3<br/>recordings)]
@@ -69,7 +72,7 @@ flowchart LR
   IF -- REST --> API
   IF -- WebRTC audio + chat data --> LK
   WEB -- REST via server --> API
-  WEB -- WebSocket events --> API
+  WEB -- SSE events --> API
   WEB -- WebRTC audio + chat data --> LK
   API --> PG
   API --> RD
@@ -90,7 +93,7 @@ flowchart LR
 | **Next.js web** | Platform console, tenant-admin console, supervisor live board, agent console, widget iframe page. No business logic. |
 | **widget.js** | Vanilla-JS loader the tenant pastes onto their site. It renders the button and opens the iframe with `allow="microphone"`, isolated from the host site's CSS and JS. |
 | **PostgreSQL** | The source of truth for all durable state, including presence and call assignment, because assignment must be transactional. |
-| **Redis** | Required by LiveKit/Egress. Also pub/sub for fanning real-time events out to WebSocket clients across API instances. It holds no state that only lives there. |
+| **Redis** | Not used in M3 (D26). A single LiveKit node does not need it; it becomes necessary for a multi-node LiveKit or Egress. Real-time fan-out uses Postgres LISTEN/NOTIFY. |
 | **LiveKit** | Media routing with built-in TURN for strict NAT and mobile networks. Its **data channel** carries chat messages. |
 | **LiveKit Egress** | Records each call room as a mixed audio-only file and uploads it to object storage. |
 | **MinIO / S3** | Private bucket. Playback only through short-lived presigned URLs issued after an authorization check. |
@@ -173,10 +176,10 @@ sequenceDiagram
 
 - An agent handles **one call at a time** (Assumption).
 - A call is routed only to agents who are **members of the widget's department** (D10).
-- Selection: **longest-idle available member**. Offer timeout: **20 s** by default (tenant setting). Decline or timeout → next agent. Repeated timeouts → agent set to `away`.
+- Selection: **longest-idle available member** (`agent_presence.idle_since`). Offer timeout: **20 s** by default (tenant setting). Decline or timeout → next agent, and an agent who declined or timed out is not offered that call again. Two timeouts in a row → agent set to `away`.
 - No one available → the call stays `queued`, **FIFO per department**. When an agent becomes available, they get the **oldest queued call across all their departments**.
 - Max wait: a tenant setting. Exceeding it → `missed` → callback form.
-- **Works with several API instances:** offers carry `expires_at` in Postgres and a sweeper (`SKIP LOCKED`) handles expiry. Accepting is a conditional `UPDATE ... WHERE status='ringing'`, so two agents can never both win a call.
+- **Works with several API instances:** every dispatch pass runs under the tenant's row lock (`SELECT … FOR UPDATE` on `tenants`), offers carry `expires_at` in Postgres, and a 2-second sweeper handles expiry, max wait and stale agents. Accepting is a pair of conditional updates (offer `pending`, call `ringing`), so two agents can never both win a call.
 
 ### 5.2 In-call chat (Proposal)
 
@@ -329,10 +332,10 @@ widgets
   appearance jsonb (label, colour, greeting),
   caller_form jsonb  -- {"enabled":true,"fields":{"name":"required","phone":"optional","email":"hidden"}}
 
-agent_presence
-  user_id PK, tenant_id, status (offline|available|busy|away),
-  status_changed_at, last_heartbeat_at
-  INDEX (tenant_id, status, status_changed_at)
+agent_presence                                -- built in M3
+  user_id PK, tenant_id, status (offline|available|away),   -- the agent's own choice; busy/ringing are derived (D27)
+  status_changed_at, idle_since, last_heartbeat_at, consecutive_timeouts
+  INDEX (tenant_id, idle_since) WHERE status = 'available'  -- longest-idle lookup
 
 ── Calls ────────────────────────────────────────────────
 calls
@@ -341,16 +344,18 @@ calls
   caller_name, caller_phone, caller_email (all NULL-able, per form config),
   consent_text, consent_given_at,
   caller_token_hash UNIQUE, caller_ip inet, caller_user_agent,
-  assigned_agent_id FK NULL, queued_at, answered_at, ended_at, end_reason
+  assigned_agent_id FK NULL (ON DELETE SET NULL), queued_at, answered_at, ended_at, end_reason
+  UNIQUE (assigned_agent_id) WHERE status = 'active'               -- one active call per agent
   INDEX (tenant_id, queued_at DESC)
   INDEX (department_id, queued_at) WHERE status = 'queued'       -- FIFO dispatch
   INDEX (assigned_agent_id, queued_at DESC)
   INDEX (tenant_id, answered_at)                                   -- minutes usage
 
-call_offers
-  id, tenant_id, call_id FK, agent_id FK, offered_at, expires_at, responded_at,
+call_offers                                   -- built in M3
+  id, tenant_id, call_id FK, agent_id FK NULL (ON DELETE SET NULL), offered_at, expires_at, responded_at,
   outcome (pending|accepted|declined|timeout|cancelled)
   UNIQUE (call_id) WHERE outcome='pending'
+  UNIQUE (agent_id) WHERE outcome='pending'                        -- one live offer per agent
   INDEX (expires_at) WHERE outcome='pending'
 
 call_messages
@@ -430,8 +435,10 @@ backend/
     user/                         -- tenant user CRUD
     department/                   -- departments + membership
     widget/                       -- widget CRUD, caller-form config, public config lookup
-    presence/                     -- availability, heartbeats, sweeper
-    call/                         -- lifecycle, dispatcher, offer sweeper, public caller endpoints
+    presence/                     -- availability, heartbeats
+    call/                         -- lifecycle (create, end), public caller endpoints; talks to routing through a narrow interface
+    routing/                      -- dispatcher, offers (accept/decline/timeout/max wait), sweeper, agent session API
+    board/                        -- supervisor live board read model (scoped to assigned departments)
     chat/                         -- call messages
     recording/                    -- metadata, playback URLs, soft delete/restore
     callback/                     -- callback requests
@@ -439,20 +446,20 @@ backend/
       paystack/  stripe/          -- Provider implementations
     audit/                        -- audit log writer + queries
     media/                        -- LiveKit adapter (rooms, tokens, SendData, egress, webhooks)
-    realtime/                     -- WebSocket hub + Redis pub/sub
+    realtime/                     -- Postgres LISTEN/NOTIFY → in-process hub → SSE streams
   migrations/
 ```
 
 Each domain package has the same shape: `handler.go` (HTTP + request DTOs + `Validate()`) → `service.go` (rules, authorization, limits) → `repository.go` (interface + pgx implementation) and `model.go`. Request DTOs are never DB models. Services depend on interfaces (`media.Provider`, `billing.Provider`, `Mailer`, repositories), so all of them can be faked in tests.
 
-**Dependencies:** stdlib `net/http` ServeMux, `jackc/pgx/v5`, `pressly/goose`, `livekit/server-sdk-go`, `redis/go-redis/v9`, `coder/websocket`, `golang.org/x/crypto/argon2`, `minio/minio-go/v7`, `stripe/stripe-go`. **Paystack:** there is no official Go SDK, so I'll write a thin HTTP client in `billing/paystack` (stdlib only).
+**Dependencies:** stdlib `net/http` ServeMux, `jackc/pgx/v5`, `pressly/goose`, `livekit/server-sdk-go`, `golang.org/x/crypto/argon2`, `minio/minio-go/v7`, `stripe/stripe-go`. **Paystack:** there is no official Go SDK, so I'll write a thin HTTP client in `billing/paystack` (stdlib only).
 
 **Auth & security**
 - Opaque session tokens (stored hashed in `sessions`, revocable). The **browser only talks to Next.js**: the token lives in an `HttpOnly; Secure; SameSite=Lax` cookie set by Next.js, and the Next.js server forwards it to the Go API as `Authorization: Bearer …`. The API never reads cookies, so it is not exposed to CSRF.
 - CSRF protection at the Next.js layer: SameSite cookie + Server Actions' built-in `Origin`/`Host` check.
 - Client IP: Next.js forwards `X-Forwarded-For`; the API trusts it only from peers listed in `TRUSTED_PROXIES`.
 - Every query runs in a transaction that sets the RLS scope (`InTenant` / `InPlatform`); repositories cannot run outside one.
-- WebSockets use a short-lived, single-use ticket.
+- Real-time streams (SSE) are authenticated like any request; the topics are derived from the session on the server, never named by the client, and each user may hold at most 3 open streams.
 - Login and signup are rate-limited. Passwords use Argon2id.
 - New agents get an **invite email** and set their own password. Admins never handle passwords.
 - LiveKit tokens are room-scoped and short-lived. The caller can only publish audio and receive data.
@@ -484,11 +491,11 @@ Tenant admin
   /admin/billing                 current plan, usage vs caps, cap policies (block/overage), change plan, payment history
   /admin/settings                timeouts, max wait, consent text override
 
-Supervisor (live board also visible to tenant admins)
+Supervisor (live board also visible to tenant admins)            -- built in M3
   /live                          real-time queues, active calls, agent statuses (scoped to assigned departments)
   /supervisor/calls · /supervisor/calls/[id]   history for assigned departments (read-only)
 
-Agent
+Agent                                                              -- console built in M3 (chat in M4)
   /agent                         console: availability, incoming offer, in-call (mute, end, chat)
   /agent/calls · /agent/calls/[id]
   /agent/callbacks · /agent/callbacks/[id]
@@ -526,9 +533,9 @@ All earlier open questions are now decided (D16–D24). These assumptions remain
 
 | # | Milestone | Done when |
 |---|-----------|-----------|
-| M1 | **Foundation:** monorepo, compose, migrations, RLS, auth (login, sessions, signup, email verification, reset, invites), platform tenant CRUD, tenant user CRUD, departments (members, supervisors, business hours), platform/tenant settings, audit log | Self-signup and admin-created tenants work. Admins invite agents and assign them to departments. Isolation tests pass. |
-| M2 | **Widgets & caller side:** widget CRUD + caller-form config, widget.js + iframe, consent, public call creation, LiveKit room/tokens | A caller on a test site joins a room after the form and consent, and the call is `queued`. |
-| M3 | **Routing & consoles:** presence, dispatcher, offers/timeouts, WS events, agent console, supervisor live board | Caller ↔ agent audio works end to end, including decline, timeout, abandon and missed. |
+| M1 ✅ | **Foundation:** monorepo, compose, migrations, RLS, auth (login, sessions, signup, email verification, reset, invites), platform tenant CRUD, tenant user CRUD, departments (members, supervisors, business hours), platform/tenant settings, audit log | Self-signup and admin-created tenants work. Admins invite agents and assign them to departments. Isolation tests pass. |
+| M2 ✅ | **Widgets & caller side:** widget CRUD + caller-form config, widget.js + iframe, consent, public call creation, LiveKit room/tokens | A caller on a test site joins a room after the form and consent, and the call is `queued`. |
+| M3 ✅ | **Routing & consoles:** presence, dispatcher, offers/timeouts, SSE events, agent console, supervisor live board | Caller ↔ agent audio works end to end, including decline, timeout, abandon and missed. |
 | M4 | **Chat, recording, callbacks, history:** chat persistence + SendData, egress, recordings, playback, soft delete/restore, callback requests, call history pages | An admin plays a recording and reads its transcript. A missed caller leaves a callback that an agent claims and completes. |
 | M5 | **Plans & billing:** plan CRUD, free tier, Paystack, then Stripe, webhooks, subscriptions, limits + cap policies, usage snapshots + overage charging, 14-day grace sweeper, billing pages | A tenant upgrades through Paystack, the limits change, overage is charged at period close, and a failed payment downgrades after 14 days. |
 | M6 | **Hardening:** rate limits, observability, load/failure tests, deployment config | Ready for staging. |

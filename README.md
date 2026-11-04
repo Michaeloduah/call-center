@@ -20,7 +20,15 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the design, decisions and m
 - Public call API backed by self-hosted LiveKit: calls are created `queued`, the caller joins an audio-only room, and LiveKit webhooks (signature-verified) end calls when the caller leaves or the room closes.
 - Embedding is restricted to each widget's allowed websites (CSP `frame-ancestors`, plus the loader's config endpoint refuses other origins).
 
-Routing calls to agents starts in M3.
+**M3 — Routing & consoles** is implemented:
+
+- Agents set themselves available / away / offline from the agent console (`/agent`). The console keeps a heartbeat; an agent whose browser stops responding goes offline automatically.
+- Waiting calls are offered to the longest-idle available agent of the widget's department (oldest call first, an agent can serve several departments). Offers time out after the tenant's offer timeout and move to the next agent; two unanswered offers in a row set an agent away; calls nobody answers within the maximum wait become `missed`.
+- Accepting joins the agent to the call's media room. Either side can end the call; if an agent's connection drops the call ends and they go offline.
+- Supervisors and tenant admins get a live board (`/live`) of queues, calls in progress and agent states, limited to supervised departments. Updates reach browsers through Server-Sent Events backed by Postgres LISTEN/NOTIFY (no Redis needed yet).
+- The widget shows "an agent is being notified", "nobody is available" and "nobody answered" states.
+
+**Calls are not recorded yet** (M4), so do not expose this build to real callers.
 
 ## Layout
 

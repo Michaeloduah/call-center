@@ -1,5 +1,5 @@
-import { tenantStatusLabels, userStatusLabels } from "@/lib/format";
-import type { TenantStatus, UserStatus } from "@/lib/types";
+import { agentStateLabels, tenantStatusLabels, userStatusLabels } from "@/lib/format";
+import type { AgentState, TenantStatus, UserStatus } from "@/lib/types";
 
 const tones = {
   green: "bg-green-50 text-green-700 ring-green-600/20",
@@ -26,4 +26,16 @@ export function UserStatusBadge({ status }: { status: UserStatus }) {
 
 export function TenantStatusBadge({ status }: { status: TenantStatus }) {
   return <Badge tone={tenantTone[status]}>{tenantStatusLabels[status]}</Badge>;
+}
+
+const agentTone: Record<AgentState, keyof typeof tones> = {
+  idle: "green",
+  ringing: "amber",
+  on_call: "indigo",
+  away: "slate",
+  offline: "slate",
+};
+
+export function AgentStateBadge({ state }: { state: AgentState }) {
+  return <Badge tone={agentTone[state]}>{agentStateLabels[state]}</Badge>;
 }

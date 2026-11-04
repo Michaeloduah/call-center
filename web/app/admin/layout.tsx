@@ -6,6 +6,8 @@ const nav = [
   { href: "/admin/users", label: "Users" },
   { href: "/admin/departments", label: "Departments" },
   { href: "/admin/widgets", label: "Widgets" },
+  { href: "/live", label: "Live board" },
+  { href: "/agent", label: "Take calls" },
   { href: "/admin/settings", label: "Settings" },
 ];
 

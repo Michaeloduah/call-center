@@ -26,8 +26,10 @@ export function homePathFor(role: Role): string {
       return "/platform/tenants";
     case "tenant_admin":
       return "/admin";
-    default:
-      return "/home";
+    case "supervisor":
+      return "/live";
+    case "agent":
+      return "/agent";
   }
 }
 

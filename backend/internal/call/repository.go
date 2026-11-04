@@ -18,9 +18,11 @@ type Repository interface {
 	FindForCaller(ctx context.Context, id uuid.UUID, tokenHash []byte) (*CallerView, error)
 	QueuePosition(ctx context.Context, c *CallerView) (int, error)
 	// End closes a live call: active becomes completed, queued/ringing become abandoned.
-	// It returns the room name, or "" if the call was not live (already ended).
-	End(ctx context.Context, id uuid.UUID, reason string) (string, error)
-	EndByRoom(ctx context.Context, room, reason string) error
+	// It returns nil if the call was not live (already ended), which makes ending idempotent.
+	End(ctx context.Context, id uuid.UUID, reason string) (*EndedCall, error)
+	EndByRoom(ctx context.Context, room, reason string) (*EndedCall, error)
+	// EndAssigned ends an active call, but only if it is assigned to agentID.
+	EndAssigned(ctx context.Context, id, agentID uuid.UUID, reason string) (*EndedCall, error)
 	MarkFailed(ctx context.Context, id uuid.UUID, reason string) error
 }
 
@@ -28,16 +30,8 @@ type pgRepository struct{}
 
 func NewRepository() Repository { return pgRepository{} }
 
-// LockTenant serialises call creation per tenant so the live-call cap cannot be raced past.
 func (pgRepository) LockTenant(ctx context.Context, tenantID uuid.UUID) error {
-	q, err := database.Conn(ctx)
-	if err != nil {
-		return err
-	}
-	if _, err := q.Exec(ctx, `SELECT 1 FROM tenants WHERE id = $1 FOR UPDATE`, tenantID); err != nil {
-		return fmt.Errorf("lock tenant: %w", err)
-	}
-	return nil
+	return database.LockTenant(ctx, tenantID)
 }
 
 func (pgRepository) CountLive(ctx context.Context, tenantID uuid.UUID) (int, error) {
@@ -108,38 +102,41 @@ func (pgRepository) QueuePosition(ctx context.Context, c *CallerView) (int, erro
 	return n, nil
 }
 
+// endLiveCall takes the reason as parameter $%d and a WHERE clause over the earlier parameters.
 const endLiveCall = `
 	UPDATE calls
 	SET status = CASE WHEN status = 'active' THEN 'completed' ELSE 'abandoned' END,
-	    ended_at = now(), end_reason = $2
+	    ended_at = now(), end_reason = $%d
 	WHERE %s AND status IN ('queued', 'ringing', 'active')
-	RETURNING room_name`
+	RETURNING id, tenant_id, department_id, room_name, assigned_agent_id`
 
-func (pgRepository) End(ctx context.Context, id uuid.UUID, reason string) (string, error) {
+func (pgRepository) end(ctx context.Context, reason, where string, args ...any) (*EndedCall, error) {
 	q, err := database.Conn(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	var room string
-	err = q.QueryRow(ctx, fmt.Sprintf(endLiveCall, "id = $1"), id, reason).Scan(&room)
+	e := EndedCall{Reason: reason}
+	err = q.QueryRow(ctx, fmt.Sprintf(endLiveCall, len(args)+1, where), append(args, reason)...).
+		Scan(&e.ID, &e.TenantID, &e.DepartmentID, &e.RoomName, &e.AgentID)
 	if database.IsNoRows(err) {
-		return "", nil
+		return nil, nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("end call: %w", err)
+		return nil, fmt.Errorf("end call: %w", err)
 	}
-	return room, nil
+	return &e, nil
 }
 
-func (pgRepository) EndByRoom(ctx context.Context, room, reason string) error {
-	q, err := database.Conn(ctx)
-	if err != nil {
-		return err
-	}
-	if _, err := q.Exec(ctx, fmt.Sprintf(endLiveCall, "room_name = $1"), room, reason); err != nil {
-		return fmt.Errorf("end call by room: %w", err)
-	}
-	return nil
+func (r pgRepository) End(ctx context.Context, id uuid.UUID, reason string) (*EndedCall, error) {
+	return r.end(ctx, reason, "id = $1", id)
+}
+
+func (r pgRepository) EndByRoom(ctx context.Context, room, reason string) (*EndedCall, error) {
+	return r.end(ctx, reason, "room_name = $1", room)
+}
+
+func (r pgRepository) EndAssigned(ctx context.Context, id, agentID uuid.UUID, reason string) (*EndedCall, error) {
+	return r.end(ctx, reason, "id = $1 AND assigned_agent_id = $2 AND status = 'active'", id, agentID)
 }
 
 func (pgRepository) MarkFailed(ctx context.Context, id uuid.UUID, reason string) error {

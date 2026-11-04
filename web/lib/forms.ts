@@ -21,3 +21,6 @@ export function field(formData: FormData, name: string): string {
 export function values(formData: FormData, names: string[]): Record<string, string> {
   return Object.fromEntries(names.map((n) => [n, field(formData, n)]));
 }
+
+/** Result of a server action that a client component calls directly (not through a form). */
+export type ActionResult<T = void> = { ok: true; data: T } | { ok: false; code: string; message: string };

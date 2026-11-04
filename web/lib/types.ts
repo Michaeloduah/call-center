@@ -176,7 +176,7 @@ export interface Widget {
   updated_at: string;
 }
 
-export type Availability = "open" | "closed" | "unavailable";
+export type Availability = "open" | "closed" | "unavailable" | "no_agents";
 
 /** Caller-facing widget configuration (public, contains nothing secret). */
 export interface PublicWidgetConfig {
@@ -210,4 +210,74 @@ export interface CallerCallView {
   status: CallStatus;
   queue_position: number | null;
   end_reason: string | null;
+}
+
+// ── Agent console & live board ──────────────────────────────────────────────
+
+/** What an agent chooses. "Ringing" and "on a call" are derived by the API, never chosen. */
+export type AgentStatus = "offline" | "available" | "away";
+export type AgentState = "offline" | "away" | "idle" | "ringing" | "on_call";
+
+/** A ringing call. Only the caller's name is shown until the agent accepts. */
+export interface Offer {
+  id: string;
+  call_id: string;
+  department_name: string;
+  caller_name: string | null;
+  expires_at: string;
+}
+
+export interface ActiveCall {
+  id: string;
+  department_name: string;
+  caller_name: string | null;
+  caller_phone: string | null;
+  caller_email: string | null;
+  answered_at: string;
+}
+
+export interface AgentSession {
+  status: AgentStatus;
+  state: AgentState;
+  offer: Offer | null;
+  call: ActiveCall | null;
+  heartbeat_interval_seconds: number;
+}
+
+export interface AcceptResult {
+  call: ActiveCall;
+  media_url: string;
+  media_token: string;
+}
+
+export interface MediaGrant {
+  media_url: string;
+  media_token: string;
+}
+
+export interface BoardAgent {
+  id: string;
+  full_name: string;
+  state: AgentState;
+}
+
+export interface BoardCall {
+  id: string;
+  status: "ringing" | "active";
+  caller_name: string | null;
+  agent_name: string | null;
+  since: string;
+}
+
+export interface BoardDepartment {
+  id: string;
+  name: string;
+  queued: number;
+  oldest_queued_since: string | null;
+  agents: BoardAgent[];
+  calls: BoardCall[];
+}
+
+export interface Board {
+  departments: BoardDepartment[];
 }

@@ -35,6 +35,10 @@ func (s *statusRecorder) WriteHeader(code int) {
 	s.ResponseWriter.WriteHeader(code)
 }
 
+// Unwrap lets http.ResponseController reach the real writer (flushing, per-write deadlines
+// for long-lived event streams).
+func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
 // Logging logs one line per request with a request id.
 func Logging(logger *slog.Logger) Middleware {
 	return func(next http.Handler) http.Handler {

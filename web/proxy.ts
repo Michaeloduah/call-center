@@ -41,5 +41,5 @@ async function widgetFrameAncestors(request: NextRequest, pathname: string) {
 }
 
 export const config = {
-  matcher: ["/platform/:path*", "/admin/:path*", "/home/:path*", "/widget/:path*"],
+  matcher: ["/platform/:path*", "/admin/:path*", "/agent/:path*", "/live/:path*", "/widget/:path*"],
 };

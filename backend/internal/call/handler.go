@@ -83,6 +83,20 @@ func (h *Handler) HangUp(w http.ResponseWriter, r *http.Request) {
 	httpx.NoContent(w)
 }
 
+// AgentEnd handles POST /v1/agent/calls/{id}/end.
+func (h *Handler) AgentEnd(w http.ResponseWriter, r *http.Request) {
+	id, err := httpx.PathUUID(r, "id", "Call")
+	if err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	if err := h.svc.AgentEnd(r.Context(), id); err != nil {
+		httpx.Error(w, r, err)
+		return
+	}
+	httpx.NoContent(w)
+}
+
 // MediaWebhook handles POST /v1/webhooks/livekit. The signature is verified before anything is read.
 func (h *Handler) MediaWebhook(w http.ResponseWriter, r *http.Request) {
 	ev, err := h.media.ParseWebhook(r)

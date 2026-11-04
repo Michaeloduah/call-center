@@ -9,6 +9,7 @@ import (
 	"callcenter/internal/department"
 	"callcenter/internal/platform/database"
 	"callcenter/internal/platform/httpx"
+	"callcenter/internal/presence"
 )
 
 // Repository persists widgets inside the caller's scoped transaction.
@@ -149,16 +150,22 @@ func (pgRepository) Resolve(ctx context.Context, publicKey string) (*Resolved, e
 	err = q.QueryRow(ctx, `
 		SELECT w.id, w.tenant_id, t.name, d.id, d.name, d.is_active, d.timezone, w.public_key, w.allowed_origins,
 		       w.button_label, w.accent_color, w.greeting, w.form_enabled, w.name_field, w.phone_field, w.email_field,
-		       coalesce(ts.consent_text_override, ps.default_consent_text)
+		       coalesce(ts.consent_text_override, ps.default_consent_text),
+		       EXISTS (
+		           SELECT 1 FROM department_members m
+		           JOIN users u ON u.id = m.user_id AND u.status = 'active'
+		           JOIN agent_presence ap ON ap.user_id = m.user_id
+		           WHERE m.department_id = d.id AND ap.status = 'available'
+		             AND ap.last_heartbeat_at > now() - make_interval(secs => $2))
 		FROM widgets w
 		JOIN tenants t ON t.id = w.tenant_id AND t.status = 'active'
 		JOIN departments d ON d.id = w.department_id
 		JOIN tenant_settings ts ON ts.tenant_id = w.tenant_id
 		CROSS JOIN platform_settings ps
-		WHERE w.public_key = $1 AND w.is_active`, publicKey).
+		WHERE w.public_key = $1 AND w.is_active`, publicKey, presence.StaleAfter.Seconds()).
 		Scan(&r.WidgetID, &r.TenantID, &r.TenantName, &r.DepartmentID, &r.DepartmentName, &r.DepartmentActive, &r.Timezone,
 			&r.PublicKey, &r.AllowedOrigins, &r.ButtonLabel, &r.AccentColor, &r.Greeting, &r.CallerForm.Enabled,
-			&r.CallerForm.Name, &r.CallerForm.Phone, &r.CallerForm.Email, &r.ConsentText)
+			&r.CallerForm.Name, &r.CallerForm.Phone, &r.CallerForm.Email, &r.ConsentText, &r.AgentsAvailable)
 	if database.IsNoRows(err) {
 		return nil, nil
 	}

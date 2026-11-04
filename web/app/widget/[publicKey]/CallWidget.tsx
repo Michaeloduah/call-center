@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useActionState, useRef, useState, useTransition } from "react";
 
 import { type StartCallState, startCallAction } from "@/app/widget/actions";
@@ -28,6 +29,8 @@ export function CallWidget({ config }: { config: PublicWidgetConfig }) {
           <Closed config={config} />
         ) : config.availability === "unavailable" ? (
           <p className="text-sm text-slate-700">Calls to this team aren&apos;t available right now. Please try again later.</p>
+        ) : config.availability === "no_agents" ? (
+          <NoAgents />
         ) : (
           <StartForm config={config} onStarted={setCall} />
         )}
@@ -117,6 +120,9 @@ function Field({
 
 const endMessages: Record<string, string> = {
   caller_hung_up: "You ended the call.",
+  agent_ended: "The agent ended the call. Thank you for calling.",
+  agent_left: "The agent was disconnected and the call ended.",
+  max_wait_exceeded: "Sorry, nobody was available to take your call. Please try again later.",
   connection_lost: "Your connection dropped and the call ended.",
   expired: "This call session has expired.",
 };
@@ -133,7 +139,13 @@ function ActiveCall({ call, config, onRestart }: { call: CallCreateResult; confi
       {session.phase === "waiting" ? (
         <Status
           title="Waiting for an agent"
-          detail={session.queuePosition ? `You are number ${session.queuePosition} in line. Please stay on this page.` : "Please stay on this page."}
+          detail={
+            session.agentRinging
+              ? "An agent is being notified. Please stay on this page."
+              : session.queuePosition
+                ? `You are number ${session.queuePosition} in line. Please stay on this page.`
+                : "Please stay on this page."
+          }
           pulse
           color={config.accent_color}
         />
@@ -188,6 +200,24 @@ function Notice({ tone, children }: { tone: "error"; children: React.ReactNode }
   return (
     <div role={tone === "error" ? "alert" : "status"} className="rounded-md bg-red-50 px-3 py-2 text-left text-sm text-red-800 ring-1 ring-red-200">
       {children}
+    </div>
+  );
+}
+
+function NoAgents() {
+  const router = useRouter();
+  const [checking, startChecking] = useTransition();
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-slate-700">Nobody is available to take your call right now. Please try again shortly.</p>
+      <button
+        type="button"
+        disabled={checking}
+        onClick={() => startChecking(() => router.refresh())}
+        className="rounded-md px-4 py-2 text-sm font-medium text-slate-800 ring-1 ring-slate-300 disabled:opacity-60"
+      >
+        {checking ? "Checking…" : "Check again"}
+      </button>
     </div>
   );
 }
